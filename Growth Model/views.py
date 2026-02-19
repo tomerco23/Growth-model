@@ -435,7 +435,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
             type_op = st.radio("סוג הוצאה:", ["שוטף (שנתי)", "חד-פעמי (הקמה)"], horizontal=True)
             c1, c2, c3 = st.columns([3, 1, 1])
             op_desc = c1.text_input("תיאור", "אחזקה שנתית")
-            op_cost = c2.number_input("עלות (₪)", 0, 10_000_000, 50_000, format="%d")
+            op_cost = c2.number_input("עלות (₪)", 0, 10_000_000, 50_000)
             qty_op = c3.number_input("כמות/יחידות", 1, 100, 1, key="q_op")
             c3_b, c4_b = st.columns(2)
             p_opt = c3_b.number_input("תרחיש אופטימי (תפעול %)", 0, 200, 100, key="op_o")
