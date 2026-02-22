@@ -1,0 +1,37 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Project saves / generated outputs (optional – remove to track these)
+*.json
+PROJECT_PRESENTATION.md
+QA_REVIEW.md
+DB_MIGRATION_PLAN.md
+UI_IMPROVEMENT_NOTES.md
+BACKEND_AUDIT.md
