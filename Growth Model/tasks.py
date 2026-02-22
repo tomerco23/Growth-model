@@ -4,17 +4,26 @@ tasks.py – CrewAI task definitions for the Hospital Growth Model project.
 Each function returns a crewai.Task bound to the appropriate agent.
 
 Initial workflow tasks (used in crew_main.py):
-  1. generate_presentation_task  – Presentation Agent reads all source files
-                                   and writes PROJECT_PRESENTATION.md.
-  2. qa_review_task              – QA Agent cross-checks the presentation
-                                   against the real code and writes QA_REVIEW.md.
+  1. create_presentation_task       – Presentation Agent reads all source files
+                                      and writes PROJECT_PRESENTATION.md.
+  2. create_qa_review_task          – QA Agent cross-checks the presentation
+                                      against the real code and writes QA_REVIEW.md.
 
-Additional tasks are defined here for future crew workflows:
-  3. ui_improvement_task         – UI Agent reviews views.py / app.py for bugs
-                                   and proposes concrete improvements.
-  4. db_migration_plan_task      – DB Agent designs the Excel → database schema.
-  5. backend_audit_task          – Backend Agent audits calculations.py for
-                                   numerical accuracy and code quality.
+Additional tasks for future or standalone crew workflows:
+  3. create_ui_improvement_task     – UI Agent reviews views.py / app.py for bugs
+                                      and proposes concrete improvements.
+  4. create_db_migration_task       – DB Agent designs the Excel → database schema.
+  5. create_backend_audit_task      – Backend Agent audits calculations.py for
+                                      numerical accuracy and code quality.
+  6. create_data_pipeline_opt_task  – Data Pipeline Agent inspects data_loading.py
+                                      for vulnerabilities and outputs an
+                                      optimisation plan.
+  7. create_ux_improvement_plan_task – Product Manager Agent reviews views.py /
+                                       app.py and outputs a UI/UX improvement plan
+                                       with visualisation proposals.
+  8. create_executive_summary_spec_task – Chief Economist Agent reviews
+                                          calculations.py and defines a rich,
+                                          dynamic executive summary template.
 """
 
 from pathlib import Path
@@ -23,11 +32,14 @@ from crewai import Task
 
 # Output files land in the same directory as the source code (Growth Model/)
 _HERE: Path = Path(__file__).parent
-_PRESENTATION_MD = str(_HERE / "PROJECT_PRESENTATION.md")
-_QA_REVIEW_MD    = str(_HERE / "QA_REVIEW.md")
-_DB_PLAN_MD      = str(_HERE / "DB_MIGRATION_PLAN.md")
-_UI_NOTES_MD     = str(_HERE / "UI_IMPROVEMENT_NOTES.md")
-_BACKEND_AUDIT_MD = str(_HERE / "BACKEND_AUDIT.md")
+_PRESENTATION_MD       = str(_HERE / "PROJECT_PRESENTATION.md")
+_QA_REVIEW_MD          = str(_HERE / "QA_REVIEW.md")
+_DB_PLAN_MD            = str(_HERE / "DB_MIGRATION_PLAN.md")
+_UI_NOTES_MD           = str(_HERE / "UI_IMPROVEMENT_NOTES.md")
+_BACKEND_AUDIT_MD      = str(_HERE / "BACKEND_AUDIT.md")
+_DATA_PIPELINE_OPT_MD  = str(_HERE / "DATA_PIPELINE_OPTIMIZATION.md")
+_UX_PLAN_MD            = str(_HERE / "UX_IMPROVEMENT_PLAN.md")
+_EXEC_SUMMARY_SPEC_MD  = str(_HERE / "EXECUTIVE_SUMMARY_SPEC.md")
 
 
 # ---------------------------------------------------------------------------
@@ -407,4 +419,339 @@ def create_backend_audit_task(agent) -> Task:
         ),
         agent=agent,
         output_file=_BACKEND_AUDIT_MD,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6 – Data Pipeline Optimization Plan
+# ---------------------------------------------------------------------------
+
+def create_data_pipeline_opt_task(agent) -> Task:
+    """Assign the Data Pipeline Agent to inspect data_loading.py for
+    vulnerabilities and produce a concrete optimisation plan.
+
+    The task focuses on real-world failure modes specific to Ichilov
+    hospital Excel exports (HR staffing, HR costs, service counts, and
+    MOH price lists), rather than generic best practices.
+    """
+    return Task(
+        description=(
+            "You are the Data Integration & Pipeline Specialist. Your job is "
+            "to read data_loading.py thoroughly and produce a concrete "
+            "DATA_PIPELINE_OPTIMIZATION.md that a developer can execute "
+            "immediately.\n\n"
+
+            "STEP 1 – Read data_loading.py, utils.py, and constants.py "
+            "in full before writing anything.\n\n"
+
+            "STEP 2 – Audit every function for the following vulnerability "
+            "classes and document EVERY instance you find:\n\n"
+
+            "A. SILENT FAILURES\n"
+            "   Situations where the code returns None, an empty DataFrame, "
+            "or a zero value without surfacing a clear error message to the "
+            "user. For each: quote the exact code lines, explain the failure "
+            "mode, and provide a fixed version with a descriptive error/warning "
+            "message.\n\n"
+
+            "B. FRAGILE COLUMN DETECTION\n"
+            "   Column mappings that rely on exact Hebrew string matches "
+            "(e.g. 'קוד שירות', 'תעריף') or positional assumptions that will "
+            "break if the hospital re-exports the file with a slightly different "
+            "column name or layout. For each: show the current code, explain "
+            "the fragility, and propose a fuzzy-match or ranked-candidate "
+            "approach with a code snippet.\n\n"
+
+            "C. ENCODING & TYPE SAFETY\n"
+            "   Any place where a string-to-numeric conversion could fail or "
+            "produce NaN without validation (e.g. clean_currency(), "
+            "pd.to_numeric(errors='coerce') calls). For each: note the "
+            "potential data loss and propose explicit validation with user-"
+            "facing warnings.\n\n"
+
+            "D. DUPLICATE & DATA QUALITY GAPS\n"
+            "   The drop_duplicates(subset=['Code']) call in "
+            "_load_service_hierarchy() silently discards rows. The "
+            "_load_hr_costs() fallback to 0 when no cost data exists gives no "
+            "warning. Document every such silent discard or silent default and "
+            "propose logging/warning for each.\n\n"
+
+            "E. MISSING COLUMN GUARDS\n"
+            "   The GROUP_COLS and EXCLUDE_ID_COLS lists assume specific column "
+            "names survive the rename step. Show what happens when a required "
+            "column is absent, and propose a validation function that checks "
+            "required columns exist before processing begins.\n\n"
+
+            "STEP 3 – Propose a defensive data-loading architecture:\n"
+            "   • A validate_hr_file(xls) function that checks required sheet "
+            "names and columns before any parsing begins, returning a list of "
+            "ValidationError objects rather than crashing.\n"
+            "   • A validate_moh_file(df, filename) function for external "
+            "price lists.\n"
+            "   • Show the function signatures and a stub implementation for "
+            "each.\n\n"
+
+            "STEP 4 – Schema preparation for SQL migration:\n"
+            "   Define a normalised data schema (table names, column names, "
+            "types) that maps directly to the DataFrames currently produced by "
+            "load_growth_data(). The schema must preserve all five return "
+            "values: df_hr, df_srv_prices, df_srv_hier_map, df_hr_counts, "
+            "h_srv. Provide CREATE TABLE DDL for each table.\n\n"
+
+            "OUTPUT FORMAT – DATA_PIPELINE_OPTIMIZATION.md with sections:\n"
+            "  1. Executive Summary (2–3 sentences on severity of findings)\n"
+            "  2. Vulnerability Audit (one sub-section per class A–E above)\n"
+            "  3. Defensive Architecture Proposals (validate_hr_file, "
+            "validate_moh_file stubs)\n"
+            "  4. SQL Schema for Migration\n"
+            "  5. Priority Implementation Order (rank fixes by risk × effort)\n\n"
+            "Use fenced code blocks (```python) for every code snippet. "
+            "Reference exact line numbers from data_loading.py."
+        ),
+        expected_output=(
+            "A structured DATA_PIPELINE_OPTIMIZATION.md with a vulnerability "
+            "audit covering all five failure classes, defensive validation "
+            "function stubs, SQL DDL schema, and a prioritised implementation "
+            "order. Every finding references the exact source file line number."
+        ),
+        agent=agent,
+        output_file=_DATA_PIPELINE_OPT_MD,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 7 – UX Improvement Plan
+# ---------------------------------------------------------------------------
+
+def create_ux_improvement_plan_task(agent) -> Task:
+    """Assign the Product Manager Agent to review views.py and app.py and
+    produce a concrete UX improvement plan with visualisation proposals.
+
+    The focus is on the hospital executive user: non-technical, time-pressured,
+    needs clear visual 'so what' signals to make a capital investment decision.
+    """
+    return Task(
+        description=(
+            "You are the Streamlit UX & Product Manager. Your job is to read "
+            "views.py and app.py thoroughly and produce a concrete "
+            "UX_IMPROVEMENT_PLAN.md that a Streamlit developer can implement "
+            "sprint by sprint.\n\n"
+
+            "STEP 1 – Read views.py, app.py, constants.py, and calculations.py "
+            "in full. Understanding calculations.py is essential so you know "
+            "exactly which data columns are available to visualise "
+            "(df_flat columns: 'סה\"כ נטו לכיס', 'תרחיש אופטימי', "
+            "'תרחיש פסימי', 'סה\"כ אחרי קאפ', 'Category_Heb', 'שם שירות', "
+            "Net_Y2, Net_Y3, Net_Y4, etc.).\n\n"
+
+            "STEP 2 – Analyse the current UX and document friction points "
+            "across the complete user journey:\n\n"
+
+            "  A. FIRST-TIME USER ONBOARDING\n"
+            "  What happens when a user opens the app with no files uploaded? "
+            "Is there guidance? What's missing? Propose a welcome banner or "
+            "onboarding checklist with a code snippet.\n\n"
+
+            "  B. SIDEBAR INFORMATION ARCHITECTURE\n"
+            "  The sidebar currently contains: project name input, save/load "
+            "expander, data upload expander, and parameters expander. Assess "
+            "the hierarchy. Is the parameter section visible enough? Are the "
+            "default values (ovh=29%, hmo=18.5%, vol=1.9%, app=4%, "
+            "no_show=0%, cap=37.5%) explained anywhere? Propose improvements "
+            "with tooltips (st.help) or st.info callouts.\n\n"
+
+            "  C. EDIT VIEW – PERSISTENT MODEL SUMMARY\n"
+            "  While adding items across the three tabs (CAPEX / OPEX / Revenue) "
+            "the user has no running total visible. Propose a compact, always-"
+            "visible summary bar (e.g. st.columns with revenue total, cost "
+            "total, and current profit estimate) that updates live. Show where "
+            "in show_edit_view() this would be inserted.\n\n"
+
+            "  D. REPORT VIEW – DATA VISUALISATIONS\n"
+            "  The current report view shows three raw st.dataframe() calls "
+            "with no charts. Define the following four charts with full "
+            "implementation guidance (library choice, data preparation from "
+            "df_flat, Streamlit call):\n\n"
+            "  D1. Revenue Waterfall Chart\n"
+            "      Show the progression: Gross Revenue → after HMO discount → "
+            "after Volume discount → after Appeals provision → after Overhead "
+            "= Net to Pocket. Use plotly.graph_objects.Waterfall. Provide the "
+            "exact data extraction code from df_flat.\n\n"
+            "  D2. Scenario Comparison Bar Chart\n"
+            "      For each item (or category), show three bars: base, "
+            "optimistic, pessimistic net value. Use st.bar_chart or "
+            "plotly.express.bar. Show how to pivot df_flat to get the right "
+            "shape.\n\n"
+            "  D3. 4-Year Projection Line Chart\n"
+            "      A multi-line chart showing Net_Y1 (= 'סה\"כ נטו לכיס'), "
+            "Net_Y2, Net_Y3, Net_Y4 for revenue items. Use plotly.express.line. "
+            "Show the melt/pivot required.\n\n"
+            "  D4. Sensitivity Tornado Chart (No-Show & Discount Risk)\n"
+            "      Show how total net profit changes as No-Show rate varies "
+            "from 0% to 20% and as HMO discount varies from 10% to 30%. "
+            "This is a horizontal bar chart. Describe the calculation logic "
+            "(re-running calculate_detailed_rows() with varied params) and "
+            "whether it should live in a new function in calculations.py or "
+            "be computed inline in views.py. Enforce module boundary "
+            "recommendation.\n\n"
+
+            "  E. MANAGEMENT SIMULATOR IMPROVEMENTS\n"
+            "  The current simulator uses sliders but the KPI metric cards "
+            "above don't update in response to slider movement without a full "
+            "rerun. Propose a UX pattern that makes the connection between "
+            "sliders and KPIs visually obvious (e.g. live delta display, "
+            "colour change, or a dedicated simulator results panel).\n\n"
+
+            "  F. MOBILE / TABLET COMPATIBILITY\n"
+            "  Hospital executives often view dashboards on tablets. Note any "
+            "layout issues (e.g. 5-column cascading filter on a tablet screen) "
+            "and propose responsive alternatives.\n\n"
+
+            "STEP 3 – Prioritise all proposals into a sprint plan:\n"
+            "  Sprint 1 (high impact, low effort): ...\n"
+            "  Sprint 2 (high impact, medium effort): ...\n"
+            "  Sprint 3 (medium impact, higher effort): ...\n\n"
+
+            "OUTPUT FORMAT – UX_IMPROVEMENT_PLAN.md with:\n"
+            "  1. Executive UX Summary\n"
+            "  2. User Journey Friction Points (A–F above)\n"
+            "  3. Visualisation Specs (D1–D4) with implementation code\n"
+            "  4. Sprint Plan\n"
+            "  5. Module Boundary Notes (confirm no business logic moves to views.py)\n\n"
+            "Use fenced code blocks (```python) for every code snippet."
+        ),
+        expected_output=(
+            "A structured UX_IMPROVEMENT_PLAN.md covering friction-point "
+            "analysis, four fully-specified data visualisation implementations "
+            "(waterfall, scenario bar, 4-year projection, tornado chart), a "
+            "sprint-based priority plan, and explicit module boundary "
+            "confirmation for each proposal."
+        ),
+        agent=agent,
+        output_file=_UX_PLAN_MD,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 8 – Executive Summary Specification
+# ---------------------------------------------------------------------------
+
+def create_executive_summary_spec_task(agent) -> Task:
+    """Assign the Chief Economist Agent to review calculations.py and
+    generate_verbal_analysis() in report.py, then define a richer, dynamic
+    executive summary spec.
+
+    The current generate_verbal_analysis() produces a 3-line text.
+    This task defines a detailed spec for replacing it with a multi-paragraph,
+    data-driven narrative that adapts to the full range of model outputs.
+    """
+    return Task(
+        description=(
+            "You are the Chief Economist & Business Analyst. Your job is to "
+            "read calculations.py and report.py thoroughly, then produce "
+            "EXECUTIVE_SUMMARY_SPEC.md — a complete specification for how the "
+            "executive summary text in this model should be dynamically "
+            "generated based on ROI, scenario outcomes, and risk factors.\n\n"
+
+            "STEP 1 – Read calculations.py in full to understand every output "
+            "of calculate_detailed_rows(): total_capex, total_opex, total_rev, "
+            "total_prof_base, total_prof_opt, total_prof_pess, roi, and the "
+            "full df_flat DataFrame with all its columns.\n\n"
+
+            "STEP 2 – Read report.py and locate generate_verbal_analysis(). "
+            "Understand its current inputs (profit_base, profit_pess, capex, "
+            "revenue, roi) and its current three-line output logic:\n"
+            "  • profit_pess > 0  → '✅ הפרויקט איתן כלכלית'\n"
+            "  • profit_base > 0  → '⚠️ הפרויקט רווחי בתרחיש הבסיס'\n"
+            "  • else             → '🛑 הפרויקט אינו כדאי כלכלית'\n\n"
+
+            "STEP 3 – Design the EXECUTIVE_SUMMARY_SPEC.md. This is a spec "
+            "document (not an implementation), but it must include enough "
+            "detail that a developer can implement it without ambiguity. "
+            "Cover ALL of the following:\n\n"
+
+            "3A. VIABILITY CLASSIFICATION\n"
+            "    Define a richer 5-level classification (not just 3) based on "
+            "the combination of ROI, profit_base, profit_pess, and the ratio "
+            "of optimistic to pessimistic profit. Specify the exact threshold "
+            "values and the corresponding status label, colour indicator, and "
+            "one-sentence verdict for each level. Ground your thresholds in "
+            "realistic Israeli hospital investment benchmarks.\n\n"
+
+            "3B. ROI NARRATIVE\n"
+            "    Define a conditional narrative for the ROI figure:\n"
+            "    • ROI < 3 years: 'Exceptional return...'\n"
+            "    • ROI 3–5 years: 'Strong return...'\n"
+            "    • ROI 5–7 years: 'Acceptable return...'\n"
+            "    • ROI 7–12 years: 'Extended payback period...'\n"
+            "    • ROI > 12 years or no profit: 'Investment not recovered...'\n"
+            "    Write the exact Hebrew and English text template for each "
+            "bracket, including the variable placeholders (e.g. {roi:.1f}).\n\n"
+
+            "3C. SENSITIVITY RISK SECTION\n"
+            "    Define how to compute and narrate sensitivity to three risk "
+            "drivers directly from the model's existing outputs:\n"
+            "    • No-Show risk: compare profit_base vs profit_pess to estimate "
+            "the model's sensitivity. If (profit_base - profit_pess) / "
+            "profit_base > 30%, flag as HIGH sensitivity.\n"
+            "    • Revenue concentration risk: if the top revenue item "
+            "contributes > 60% of total_rev (computable from df_flat), flag as "
+            "HIGH concentration risk.\n"
+            "    • CAPEX coverage: ratio of total_capex to total_rev; if > 50%, "
+            "flag as HIGH upfront burden.\n"
+            "    For each risk flag, define the exact text to include in the "
+            "summary (both a ⚠️ warning and the supporting numbers).\n\n"
+
+            "3D. SCENARIO COMPARISON PARAGRAPH\n"
+            "    Define a template paragraph that compares net and CAP "
+            "scenarios. The CAP profit is not a direct output of "
+            "calculate_detailed_rows() — explain what data from df_flat would "
+            "be needed to compute it (hint: sum 'סה\"כ אחרי קאפ' for Revenue "
+            "rows, then subtract OPEX and HR costs) and specify the formula.\n\n"
+
+            "3E. YEAR-BY-YEAR GROWTH OUTLOOK\n"
+            "    Net_Y2, Net_Y3, Net_Y4 are available per revenue row in "
+            "df_flat. Define how to aggregate them to a project-level 4-year "
+            "total-profit projection, and write a one-sentence template that "
+            "summarises the compound growth outlook (e.g. 'Over 4 years, total "
+            "projected net income is ₪{total_4yr:,.0f}, representing a "
+            "{growth_pct:.0f}% uplift on Year 1.').\n\n"
+
+            "3F. RECOMMENDATION STATEMENT\n"
+            "    Define the final recommendation sentence. It must reference "
+            "the pessimistic scenario explicitly (as the conservative bound), "
+            "the ROI, and the viability classification. Provide both a Hebrew "
+            "and an English version of the template.\n\n"
+
+            "3G. UPDATED generate_verbal_analysis() SIGNATURE\n"
+            "    Propose an updated Python function signature for "
+            "generate_verbal_analysis() that accepts all the additional inputs "
+            "needed for the richer summary (df_flat, total_prof_opt, "
+            "CAP-revenue total, etc.). Do NOT write the full implementation — "
+            "just the signature, a docstring, and the return type. The "
+            "implementation is left to the Backend Agent.\n\n"
+
+            "OUTPUT FORMAT – EXECUTIVE_SUMMARY_SPEC.md with:\n"
+            "  1. Overview & Motivation (why the current 3-line summary falls short)\n"
+            "  2. Viability Classification Table (5 levels with thresholds)\n"
+            "  3. ROI Narrative Templates (5 brackets, bilingual)\n"
+            "  4. Sensitivity Risk Section Spec\n"
+            "  5. Scenario Comparison Paragraph Template\n"
+            "  6. 4-Year Growth Outlook Template\n"
+            "  7. Final Recommendation Statement (bilingual template)\n"
+            "  8. Updated generate_verbal_analysis() Signature\n"
+            "  9. Implementation Notes for the Backend Agent\n\n"
+            "Be precise. Every template must include exact variable placeholder "
+            "names that match the actual outputs of calculate_detailed_rows()."
+        ),
+        expected_output=(
+            "A structured EXECUTIVE_SUMMARY_SPEC.md with a 5-level viability "
+            "classification table, bilingual narrative templates for all ROI "
+            "brackets, sensitivity risk formulas and text templates, scenario "
+            "comparison and growth-outlook templates, and an updated "
+            "generate_verbal_analysis() function signature with docstring — "
+            "all grounded in the actual variable names from calculations.py."
+        ),
+        agent=agent,
+        output_file=_EXEC_SUMMARY_SPEC_MD,
     )

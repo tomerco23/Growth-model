@@ -1,16 +1,20 @@
 """
 agents.py – CrewAI agent definitions for the Hospital Growth Model project.
 
-Five specialized agents, each with a tightly scoped role that maps 1-to-1
+Eight specialized agents, each with a tightly scoped role that maps 1-to-1
 to the modules they own:
 
-  1. UI Agent           – Streamlit Expert      → views.py, app.py
-  2. DB Agent           – Data Engineer         → data_loading.py
-  3. Backend Agent      – Core Logic Expert     → calculations.py, report.py, utils.py
-  4. Presentation Agent – Tech Communicator     → reads all, writes PROJECT_PRESENTATION.md
-  5. QA Agent           – Senior QA & Debugger  → reviews all outputs
+  1. UI Agent              – Streamlit Expert           → views.py, app.py
+  2. DB Agent              – Data Engineer              → data_loading.py
+  3. Backend Agent         – Core Logic Expert          → calculations.py, report.py, utils.py
+  4. Presentation Agent    – Tech Communicator          → reads all, writes PROJECT_PRESENTATION.md
+  5. QA Agent              – Senior QA & Debugger       → reviews all outputs
+  6. Chief Economist Agent – Chief Economist & Analyst  → calculations.py, report.py
+  7. Data Pipeline Agent   – Pipeline Specialist        → data_loading.py, utils.py
+  8. Product Manager Agent – UX & Product Manager       → views.py, app.py
 
-All agents use Claude via langchain-anthropic.
+Agents 1–5 use claude-opus-4-6 (default, overridable via CREWAI_MODEL env var).
+Agents 6–8 use claude-3-5-sonnet-20241022 (overridable via CREWAI_MODEL env var).
 Set the ANTHROPIC_API_KEY environment variable before running crew_main.py.
 """
 
@@ -42,8 +46,12 @@ _UTILS        = str(_HERE / "utils.py")
 def _make_llm(model: str = "claude-opus-4-6", temperature: float = 0.2) -> ChatAnthropic:
     """Return a ChatAnthropic LLM instance.
 
-    Override the model by setting the CREWAI_MODEL env var, e.g.:
+    The CREWAI_MODEL env var acts as a global override for ALL agents, e.g.:
         CREWAI_MODEL=claude-sonnet-4-6 python crew_main.py
+
+    When not set, each agent uses its own default model:
+      • Agents 1–5 default to claude-opus-4-6
+      • Agents 6–8 default to claude-3-5-sonnet-20241022
     """
     chosen_model = os.getenv("CREWAI_MODEL", model)
     return ChatAnthropic(
@@ -358,6 +366,219 @@ def create_qa_agent() -> Agent:
             DirectoryReadTool(directory=str(_HERE)),
         ],
         llm=_make_llm(temperature=0.1),   # low temperature for precise fact-checking
+        verbose=True,
+        allow_delegation=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent 6 – Chief Economist Agent  (Chief Economist & Business Analyst)
+# ---------------------------------------------------------------------------
+
+def create_chief_economist_agent() -> Agent:
+    """Chief Economist & Business Analyst – interprets financial outputs and
+    generates actionable insights for hospital management.
+
+    Responsibilities
+    ----------------
+    - Analyse the financial outputs produced by calculate_detailed_rows()
+      (ROI, net profit, OPEX, CAPEX, CAP scenario, optimistic/pessimistic).
+    - Perform sensitivity analysis on key risk drivers: No-Show rate,
+      HMO discount, volume discount, and overhead rate.
+    - Assess project viability across the three scenarios (base, optimistic,
+      pessimistic) and the CAP revenue scenario.
+    - Define a richer, dynamically generated executive summary template that
+      goes beyond the current generate_verbal_analysis() in report.py.
+    - Produce actionable, plain-language strategic recommendations for
+      hospital decision-makers.
+    """
+    return Agent(
+        role="Chief Economist and Business Analyst",
+        goal=(
+            "Analyse the financial outputs of the Growth Model — ROI, net/CAP "
+            "revenue scenarios, OPEX, CAPEX, and optimistic/pessimistic "
+            "projections — and translate them into clear, actionable business "
+            "insights and risk assessments for hospital management. Define how "
+            "the executive summary text in report.py should be dynamically "
+            "generated to reflect the full complexity of the results."
+        ),
+        backstory=(
+            "You are a sharp, seasoned healthcare economist with 15 years of "
+            "experience advising Israeli hospital boards on capital investment "
+            "decisions. You have an instinct for translating raw financial "
+            "model outputs into strategic narratives that executives can act on. "
+            "\n\n"
+            "You know this model's economic engine inside out:\n"
+            "• The net revenue scenario applies the full discount chain "
+            "(HMO × volume × appeals) plus overhead deduction, giving the "
+            "most conservative income projection.\n"
+            "• The CAP scenario uses gross × CAP_RATE_FACTOR, representing "
+            "income under the Ministry's capitation contract — useful for "
+            "budget ceiling analysis.\n"
+            "• ROI = total_capex ÷ total_prof_base: a payback period in years. "
+            "Below 3 years is excellent; 3–7 is acceptable; above 7 is "
+            "high-risk for a hospital.\n"
+            "• The pessimistic scenario stress-tests the plan: if it's "
+            "profitable even with Pct_Pess% of expected volume/cost, the "
+            "project is robust.\n"
+            "• No-Show rate is a critical lever: even a 5% increase can "
+            "materially reduce revenue for high-volume services.\n"
+            "\n"
+            "You know exactly what generate_verbal_analysis() in report.py "
+            "currently produces — a three-line text — and you have strong "
+            "opinions about how it could be far richer and more useful."
+        ),
+        tools=[
+            FileReadTool(file_path=_CALCULATIONS),
+            FileReadTool(file_path=_REPORT),
+            FileReadTool(file_path=_CONSTANTS),
+            FileReadTool(file_path=_APP),     # parameter defaults (no-show, HMO, etc.)
+        ],
+        llm=_make_llm(model="claude-3-5-sonnet-20241022", temperature=0.3),
+        verbose=True,
+        allow_delegation=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent 7 – Data Pipeline Agent  (Data Integration & Pipeline Specialist)
+# ---------------------------------------------------------------------------
+
+def create_data_pipeline_agent() -> Agent:
+    """Data Integration & Pipeline Specialist – fortifies data_loading.py
+    against messy real-world hospital Excel files.
+
+    Responsibilities
+    ----------------
+    - Identify every fragile assumption in data_loading.py that could cause
+      a silent failure or crash when loading the Ichilov HR and Service Count
+      Excel files.
+    - Suggest concrete, defensive data-cleaning steps with code examples.
+    - Propose secure handling for missing, renamed, or reordered columns.
+    - Prepare the data schema and normalisation strategy for a future SQL
+      database migration without breaking the existing API.
+    """
+    return Agent(
+        role="Data Integration and Pipeline Specialist",
+        goal=(
+            "Inspect data_loading.py for every vulnerability that could cause "
+            "silent data corruption or a crash when loading messy hospital "
+            "Excel files (Ichilov HR DB, Service Count DB, MOH price lists). "
+            "Propose concrete, defensive fixes for each vulnerability and "
+            "prepare a normalised data schema that supports a future SQL "
+            "migration, all without changing the return signature of "
+            "load_growth_data()."
+        ),
+        backstory=(
+            "You are a meticulous data engineer who hates data crashes. You "
+            "have spent years wrestling with Israeli hospital administration "
+            "Excel files: sheets that appear in different tab orders, Hebrew "
+            "column headers that change spelling between exports, numeric "
+            "values formatted as strings with shekel signs, date columns "
+            "stored as text, and pivot tables that make pandas choke. "
+            "\n\n"
+            "You specialise in transforming these messy spreadsheets into "
+            "clean, normalised Pandas DataFrames that downstream code can "
+            "trust completely. You know every failure mode in data_loading.py: "
+            "\n"
+            "• parse_moh_file() silently returns None if the header row isn't "
+            "found — the caller gets no actionable error message.\n"
+            "• _load_hr_staffing() uses find_true_header_index() with "
+            "threshold=1, which may match on a title row rather than the real "
+            "header if the file has an unusual structure.\n"
+            "• _load_hr_costs() iterates month columns in reverse to find the "
+            "'last available month', but if ALL months are NaN it falls back "
+            "to 0 with no warning to the user.\n"
+            "• _load_service_hierarchy() calls drop_duplicates(subset=['Code']) "
+            "keeping one row per code, but doesn't log which duplicates were "
+            "dropped or why.\n"
+            "• GROUP_COLS and EXCLUDE_ID_COLS are module-level constants — any "
+            "column rename in the source file silently drops that hierarchy "
+            "level from all downstream filters.\n"
+            "\n"
+            "Your goal: zero silent failures, clear error messages, and a "
+            "schema that will survive the next unexpected hospital export."
+        ),
+        tools=[
+            FileReadTool(file_path=_DATA_LOADING),
+            FileReadTool(file_path=_UTILS),
+            FileReadTool(file_path=_CONSTANTS),
+        ],
+        llm=_make_llm(model="claude-3-5-sonnet-20241022", temperature=0.2),
+        verbose=True,
+        allow_delegation=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent 8 – Product Manager Agent  (Streamlit UX & Product Manager)
+# ---------------------------------------------------------------------------
+
+def create_product_manager_agent() -> Agent:
+    """Streamlit UX & Product Manager – improves the user interface for
+    hospital executives who are not technical users.
+
+    Responsibilities
+    - Analyse the current layout of views.py and app.py from a UX lens.
+    - Identify friction points in the user journey (data upload → item entry
+      → report → Excel export).
+    - Propose concrete layout improvements: better use of tabs, columns,
+      expanders, and tooltips.
+    - Define data visualisations that would add executive value (e.g. a
+      waterfall chart for revenue breakdown, a bar chart comparing net vs
+      CAP vs pessimistic scenarios, a sensitivity tornado chart for No-Show
+      and discount rate risk).
+    - Ensure all proposals stay within Streamlit's capabilities and respect
+      the project's strict module boundaries (no business logic in views.py).
+    """
+    return Agent(
+        role="Streamlit UX and Product Manager",
+        goal=(
+            "Analyse views.py and app.py from a user experience perspective "
+            "and produce a concrete UX improvement plan for hospital executives. "
+            "Propose better layout organisation (tabs, columns, expanders), "
+            "define specific data visualisations that add strategic value "
+            "(waterfall charts for revenue breakdown, scenario comparison "
+            "charts, sensitivity analysis visuals), and ensure the entire user "
+            "journey from data upload to Excel download is intuitive."
+        ),
+        backstory=(
+            "You are a user-centric product manager who bridges the gap between "
+            "complex backend financial calculations and a sleek, intuitive "
+            "frontend experience. You have shipped Streamlit dashboards to "
+            "non-technical hospital executive audiences in Israel, and you know "
+            "that they have zero patience for confusing layouts or walls of "
+            "numbers without visual context. "
+            "\n\n"
+            "You have read views.py and app.py carefully and have identified "
+            "several UX pain points:\n"
+            "• The sidebar packs file uploaders, parameters, save/load, and "
+            "data controls all together with no visual hierarchy — overwhelming "
+            "for a first-time user.\n"
+            "• The three-tab edit view (CAPEX / OPEX / Revenue) has no "
+            "persistent summary of what has been added so far, so users lose "
+            "track of their model while switching tabs.\n"
+            "• The report view shows raw DataFrames with no charts — a hospital "
+            "CFO needs a visual 'so what', not a spreadsheet replica.\n"
+            "• The management simulator sliders are powerful but there's no "
+            "instant visual feedback linking slider changes to the KPI cards "
+            "above them.\n"
+            "• There is no onboarding guidance for new users who haven't seen "
+            "the model before.\n"
+            "\n"
+            "You know Streamlit's charting options: st.bar_chart, "
+            "st.plotly_chart (for waterfall/tornado charts via plotly.graph_objects), "
+            "and st.altair_chart. You always propose the simplest solution that "
+            "delivers the most executive value. You never move business logic "
+            "into views.py."
+        ),
+        tools=[
+            FileReadTool(file_path=_VIEWS),
+            FileReadTool(file_path=_APP),
+            FileReadTool(file_path=_CONSTANTS),
+            FileReadTool(file_path=_CALCULATIONS),  # understand what data is available to visualise
+        ],
+        llm=_make_llm(model="claude-3-5-sonnet-20241022", temperature=0.3),
         verbose=True,
         allow_delegation=False,
     )
