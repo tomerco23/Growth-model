@@ -216,7 +216,7 @@ def main():
     if st.session_state.view_mode == 'edit':
         show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params)
     else:
-        show_report_view(p_name, params)
+        show_report_view(p_name, params, h_srv=h_srv, h_hr=h_hr)
 
 
 if __name__ == "__main__":

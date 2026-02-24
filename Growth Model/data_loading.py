@@ -305,3 +305,59 @@ def load_growth_data(file_internal, file_external_list):
 
     except Exception as e:
         return None, None, None, None, None, None, None, [f"קריסה כללית בטעינה: {str(e)}"]
+
+
+# ---------------------------------------------------------------------------
+# Marginal-productivity helper (תפוקה שולית)
+# ---------------------------------------------------------------------------
+
+def build_marginal_productivity_map(h_srv: pd.DataFrame, h_hr: pd.DataFrame) -> dict:
+    """
+    מחשב תפוקה שולית של עובד ביחס לשירות מסוים.
+
+    נוסחה:
+        תפוקה שולית = סך שירותים (כל החודשים) / סך תקנים
+
+    מקורות:
+        h_srv  – נתוני DB_Service_count לאחר melt: עמודות [Original_Label, Date, Value]
+        h_hr   – df_hr_counts מ-DB_HR_Staffing:    עמודות [GROUP_COLS..., Existing_FTE]
+
+    מחזיר:
+        dict  {normalized_service_code:
+                  {'total_services': float,
+                   'total_fte':      float,
+                   'productivity':   float}}
+    """
+    result = {}
+
+    # ── מכנה: סך התקנים ──────────────────────────────────────────────────
+    total_fte = 0.0
+    if h_hr is not None and not h_hr.empty and 'Existing_FTE' in h_hr.columns:
+        total_fte = float(
+            pd.to_numeric(h_hr['Existing_FTE'], errors='coerce').fillna(0).sum()
+        )
+
+    # ── מונה: סך שירותים לכל קוד שירות ──────────────────────────────────
+    if h_srv is None or h_srv.empty or 'Original_Label' not in h_srv.columns:
+        return result
+
+    h = h_srv.copy()
+    h['_Code'] = h['Original_Label'].apply(extract_clean_code_from_string)
+    h['_Value'] = pd.to_numeric(
+        h['Value'] if 'Value' in h.columns else 0,
+        errors='coerce',
+    ).fillna(0)
+
+    valid = h[h['_Code'].notna() & (h['_Code'] != '')]
+    for code, grp in valid.groupby('_Code'):
+        code_str = str(code).strip()
+        if not code_str:
+            continue
+        total_srv = float(grp['_Value'].sum())
+        result[code_str] = {
+            'total_services': total_srv,
+            'total_fte':      total_fte,
+            'productivity':   round(total_srv / total_fte, 2) if total_fte > 0 else 0.0,
+        }
+
+    return result

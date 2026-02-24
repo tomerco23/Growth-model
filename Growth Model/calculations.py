@@ -1,9 +1,10 @@
 import pandas as pd
 
 from constants import CAT_MAP, Category
+from utils import normalize_code
 
 
-def calculate_detailed_rows(items: list, params: dict):
+def calculate_detailed_rows(items: list, params: dict, prod_map: dict | None = None):
     rows = []
     total_capex = 0.0
     total_opex = 0.0
@@ -54,6 +55,10 @@ def calculate_detailed_rows(items: list, params: dict):
             "Net_Y2": 0,
             "Net_Y3": 0,
             "Net_Y4": 0,
+            # תפוקה שולית (מתמלא רק לשורות הכנסה)
+            'סה"כ שירותים היסטורי': 0.0,
+            'תקנים': 0.0,
+            'תפוקה שולית': 0.0,
         }
 
         # ---- Investment / one-time CAPEX --------------------------------
@@ -213,6 +218,10 @@ def calculate_detailed_rows(items: list, params: dict):
             rev_sess_vol = item.get('Rev_Sess_Vol', 0)
             rev_sess_cost = item.get('Rev_Sess_Cost', 0)
 
+            # ── תפוקה שולית: בדיקה ב-prod_map לפי קוד שירות מנורמל ──────────
+            _norm_code = normalize_code(code) or ""
+            _mp = (prod_map or {}).get(_norm_code, {})
+
             row = {
                 **base_row,
                 "סוג": "הכנסה",
@@ -233,6 +242,9 @@ def calculate_detailed_rows(items: list, params: dict):
                 "Net_Y2": val_y2,
                 "Net_Y3": val_y3,
                 "Net_Y4": val_y4,
+                'סה"כ שירותים היסטורי': _mp.get('total_services', 0.0),
+                'תקנים':                 _mp.get('total_fte', 0.0),
+                'תפוקה שולית':           _mp.get('productivity', 0.0),
             }
             rows.append(row)
 

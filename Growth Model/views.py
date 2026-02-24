@@ -15,8 +15,9 @@ except ImportError:
 
 from calculations import calculate_detailed_rows
 from constants import CAT_MAP, Category
+from data_loading import build_marginal_productivity_map
 from report import create_hybrid_report_sheet, generate_verbal_analysis
-from utils import format_number_str
+from utils import format_number_str, normalize_code
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +328,12 @@ def update_model_from_editor():
 # ---------------------------------------------------------------------------
 
 def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params):
+    # ── תפוקה שולית: מחשב פעם אחת מנתוני ה-Excel ──────────────────────────
+    _prod_map = build_marginal_productivity_map(h_srv, h_hr) if (
+        h_srv is not None and not h_srv.empty and
+        h_hr  is not None and not h_hr.empty
+    ) else {}
+
     t1, t2, t3 = st.tabs(["🏗️ השקעה (CAPEX)", "💼 הוצאות תפעול (OPEX)", "💰 הכנסות (Revenue)"])
 
     with t1:
@@ -475,6 +482,18 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 match = df_srv_prices[df_srv_prices['Code'].astype(str) == str(code)]
                 if not match.empty:
                     st.info(f"💰 **תעריף ברוטו ליחידה:** ₪{format_number_str(float(match['Tariff'].values[0]))}")
+                # ── תפוקה שולית לשירות הנבחר ─────────────────────────────
+                _norm = normalize_code(code)
+                _mp   = _prod_map.get(_norm or "", {})
+                if _mp and _mp.get('total_services', 0) > 0:
+                    st.success(
+                        f"📊 **תפוקה שולית היסטורית לשירות זה:**  "
+                        f"סה\"כ {_mp['total_services']:,.0f} שירותים בנתוני הבסיס | "
+                        f"{_mp['total_fte']:,.1f} תקנים במחלקה | "
+                        f"**{_mp['productivity']:,.1f} שירותים לתקן**"
+                    )
+                elif _prod_map:
+                    st.caption("ℹ️ אין נתון היסטורי לשירות זה בקובץ DB_Service_count")
         else:
             c_man1, c_man2 = st.columns([3, 1])
             c_man1.text_input("שם השירות", key="srv_man_name")
@@ -508,7 +527,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
     if st.session_state.growth_items:
         with st.spinner("מחשב..."):
             df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-                st.session_state.growth_items, params
+                st.session_state.growth_items, params, prod_map=_prod_map
             )
         st.markdown("### 🛠️ עריכה ומחיקה")
         if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
@@ -567,7 +586,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
 # Report view
 # ---------------------------------------------------------------------------
 
-def show_report_view(p_name: str, params: dict):  # noqa: C901
+def show_report_view(p_name: str, params: dict, h_srv=None, h_hr=None):  # noqa: C901
     st.header(f"📊 דו\"ח מסכם: {p_name}")
 
     if not st.session_state.growth_items:
@@ -602,8 +621,12 @@ def show_report_view(p_name: str, params: dict):  # noqa: C901
                     )
 
     # ── חישוב ───────────────────────────────────────────────────────────────
+    _prod_map_r = build_marginal_productivity_map(h_srv, h_hr) if (
+        h_srv is not None and not h_srv.empty and
+        h_hr  is not None and not h_hr.empty
+    ) else {}
     df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-        st.session_state.growth_items, params
+        st.session_state.growth_items, params, prod_map=_prod_map_r
     )
 
     # נגזרות לתרחיש קאפ
@@ -718,23 +741,40 @@ def show_report_view(p_name: str, params: dict):  # noqa: C901
             'סה"כ נטו לכיס':            'נטו לכיס',
             'תרחיש אופטימי':            'אופטימי',
             'תרחיש פסימי':              'פסימי',
+            # ── תפוקה שולית ──────────────────────────────────────────────
+            'סה"כ שירותים היסטורי':     'שירותים היסטורי',
+            'תקנים':                    'תקנים',
+            'תפוקה שולית':              'שירותים/תקן',
         }
         _rev_cols_exist = [c for c in _rev_col_map if c in df_rev_all.columns]
         rev_display = df_rev_all[_rev_cols_exist].rename(columns=_rev_col_map)
 
         _curr_fmt = "₪%,.0f"
         _col_cfg = {
-            'כמות':         st.column_config.NumberColumn(format="%.2f"),
-            'תעריף ברוטו':  st.column_config.NumberColumn(format=_curr_fmt),
-            'תעריף נטו':    st.column_config.NumberColumn(format=_curr_fmt),
-            'תעריף קאפ':    st.column_config.NumberColumn(format=_curr_fmt),
-            'סה"כ ברוטו':   st.column_config.NumberColumn(format=_curr_fmt),
-            'סה"כ נטו':     st.column_config.NumberColumn(format=_curr_fmt),
-            'סה"כ קאפ':     st.column_config.NumberColumn(format=_curr_fmt),
-            'תקורה':        st.column_config.NumberColumn(format=_curr_fmt),
-            'נטו לכיס':     st.column_config.NumberColumn(format=_curr_fmt),
-            'אופטימי':      st.column_config.NumberColumn(format=_curr_fmt),
-            'פסימי':        st.column_config.NumberColumn(format=_curr_fmt),
+            'כמות':              st.column_config.NumberColumn(format="%.2f"),
+            'תעריף ברוטו':       st.column_config.NumberColumn(format=_curr_fmt),
+            'תעריף נטו':         st.column_config.NumberColumn(format=_curr_fmt),
+            'תעריף קאפ':         st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ ברוטו':        st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ נטו':          st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ קאפ':          st.column_config.NumberColumn(format=_curr_fmt),
+            'תקורה':             st.column_config.NumberColumn(format=_curr_fmt),
+            'נטו לכיס':          st.column_config.NumberColumn(format=_curr_fmt),
+            'אופטימי':           st.column_config.NumberColumn(format=_curr_fmt),
+            'פסימי':             st.column_config.NumberColumn(format=_curr_fmt),
+            # תפוקה שולית
+            'שירותים היסטורי':   st.column_config.NumberColumn(
+                label="שירותים היסטורי", format="%,.0f",
+                help="סך השירותים שניתנו בכל החודשים הנתונים בקובץ HR",
+            ),
+            'תקנים':             st.column_config.NumberColumn(
+                label="תקנים", format="%.1f",
+                help="סך התקנים (FTE) במחלקה",
+            ),
+            'שירותים/תקן':       st.column_config.NumberColumn(
+                label="שירותים/תקן", format="%.1f",
+                help="תפוקה שולית = שירותים היסטורי ÷ תקנים",
+            ),
         }
         st.dataframe(rev_display, use_container_width=True, hide_index=True,
                      column_config={k: v for k, v in _col_cfg.items() if k in rev_display.columns})
