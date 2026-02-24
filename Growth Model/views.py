@@ -6,9 +6,16 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    _PLOTLY_AVAILABLE = True
+except ImportError:
+    _PLOTLY_AVAILABLE = False
+
 from calculations import calculate_detailed_rows
 from constants import CAT_MAP, Category
-from report import create_hybrid_report_sheet
+from report import create_hybrid_report_sheet, generate_verbal_analysis
 from utils import format_number_str
 
 
@@ -499,9 +506,10 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         st.button("➕ הוסף הכנסה/ות", on_click=add_srv_item, args=(df_srv_prices, params))
 
     if st.session_state.growth_items:
-        df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-            st.session_state.growth_items, params
-        )
+        with st.spinner("מחשב..."):
+            df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
+                st.session_state.growth_items, params
+            )
         st.markdown("### 🛠️ עריכה ומחיקה")
         if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
             undo_last_action()
@@ -559,7 +567,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
 # Report view
 # ---------------------------------------------------------------------------
 
-def show_report_view(p_name: str, params: dict):
+def show_report_view(p_name: str, params: dict):  # noqa: C901
     st.header(f"📊 דו\"ח מסכם: {p_name}")
 
     if not st.session_state.growth_items:
@@ -567,6 +575,7 @@ def show_report_view(p_name: str, params: dict):
         st.button("✏️ חזור לעריכה", on_click=lambda: st.session_state.update({'view_mode': 'edit'}))
         return
 
+    # ── סימולטור מנהלים (ללא שינוי) ────────────────────────────────────────
     with st.expander("🎛️ סימולטור מנהלים", expanded=True):
         st.info("שינוי הערכים כאן משפיע רק על התצוגה.")
         tabs_sim = st.tabs(["💰 הכנסות", "👨‍⚕️ כוח אדם", "🏗️ השקעות"])
@@ -592,27 +601,221 @@ def show_report_view(p_name: str, params: dict):
                         int(item['Unit_Cost']), 1000, key=f"s_i_{i}",
                     )
 
+    # ── חישוב ───────────────────────────────────────────────────────────────
     df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
         st.session_state.growth_items, params
     )
 
-    k1, k2, k3 = st.columns(3)
-    k1.metric("רווח כולל", f"₪{format_number_str(profit_b - capex)}")
-    k2.metric("רווח תפעולי", f"₪{format_number_str(profit_b)}")
-    k3.metric("ROI", f"{format_number_str(roi)} שנים", delta_color="normal" if roi > 0 else "inverse")
+    # נגזרות לתרחיש קאפ
+    df_rev_all  = df_flat[(df_flat['קטגוריה'] == Category.REVENUE) & (df_flat['Row_Type'] == 'Main')]
+    df_op_only  = df_flat[(df_flat['קטגוריה'] == Category.OPERATION) & (df_flat['סוג'] != 'השקעה חד-פעמית')]
+    df_hr_only  = df_flat[df_flat['קטגוריה'] == Category.MANPOWER]
+    total_rev_cap  = df_rev_all['סה"כ אחרי קאפ'].sum()
+    total_op_exp   = abs(df_op_only['סה"כ נטו לכיס'].sum())
+    total_hr_exp   = abs(df_hr_only['סה"כ נטו לכיס'].sum())
+    op_profit_cap  = total_rev_cap - total_op_exp - total_hr_exp
+    roi_cap        = (capex / op_profit_cap) if op_profit_cap > 0 else 0
+    gross_total    = df_rev_all['סה"כ ברוטו'].sum()
+
+    # ── A+G: Hero Banner + ניתוח מילולי ────────────────────────────────────
+    verbal = generate_verbal_analysis(profit_b, profit_opt, profit_pess, capex, opex, rev, roi, df_flat)
+    if profit_pess > 0:
+        st.success(verbal)
+    elif profit_b > 0:
+        st.warning(verbal)
+    else:
+        st.error(verbal)
+
+    # ── B: 4 KPI Cards ──────────────────────────────────────────────────────
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        "הכנסות נטו לכיס",
+        f"₪{format_number_str(rev)}",
+        delta=f"ברוטו ₪{format_number_str(gross_total)}",
+        delta_color="off",
+    )
+    col2.metric(
+        "רווח תפעולי",
+        f"₪{format_number_str(profit_b)}",
+        delta=f"פסימי ₪{format_number_str(profit_pess)}",
+        delta_color="normal" if profit_pess >= 0 else "inverse",
+    )
+    col3.metric(
+        "רווח כולל (בניכוי השקעה)",
+        f"₪{format_number_str(profit_b - capex)}",
+        delta=f"CAPEX ₪{format_number_str(capex)}",
+        delta_color="off",
+    )
+    _roi_delta = "מצוין (< 3 שנים)" if 0 < roi < 3 else ("גבוה" if roi >= 3 else None)
+    col4.metric(
+        "ROI",
+        f"{roi:.1f} שנים" if roi > 0 else "—",
+        delta=_roi_delta,
+        delta_color="normal" if 0 < roi < 3 else ("inverse" if roi >= 3 else "off"),
+    )
 
     st.divider()
-    st.success("💰 הכנסות")
-    st.dataframe(df_flat[df_flat['קטגוריה'] == Category.REVENUE], use_container_width=True, hide_index=True)
-    st.error("📉 הוצאות")
-    st.dataframe(df_flat[df_flat['קטגוריה'].isin([Category.MANPOWER, Category.OPERATION])], use_container_width=True, hide_index=True)
-    st.info("🏗️ השקעות")
-    st.dataframe(df_flat[df_flat['סוג'] == 'השקעה חד-פעמית'], use_container_width=True, hide_index=True)
 
+    # ── C+D: גרפים – השוואת תרחישים + תחזית רב-שנתית ─────────────────────
+    if _PLOTLY_AVAILABLE:
+        chart_l, chart_r = st.columns(2)
+
+        with chart_l:
+            # C – Scenario comparison bar
+            fig_sc = go.Figure(data=[
+                go.Bar(name='פסימי',   x=['רווח תפעולי'], y=[profit_pess], marker_color='#e74c3c'),
+                go.Bar(name='בסיס',    x=['רווח תפעולי'], y=[profit_b],    marker_color='#3498db'),
+                go.Bar(name='אופטימי', x=['רווח תפעולי'], y=[profit_opt],  marker_color='#2ecc71'),
+            ])
+            fig_sc.add_hline(y=0, line_dash="dash", line_color="black",
+                             annotation_text="נקודת איזון", annotation_position="top right")
+            fig_sc.update_layout(
+                title="השוואת תרחישים", barmode='group', height=340,
+                yaxis_title="₪", xaxis_title="",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(fig_sc, use_container_width=True)
+
+        with chart_r:
+            # D – Multi-year projection
+            df_non_info = df_flat[df_flat['Row_Type'] != 'SessionInfo']
+            _y1 = profit_b
+            _y2 = df_non_info['Net_Y2'].sum()
+            _y3 = df_non_info['Net_Y3'].sum()
+            _y4 = df_non_info['Net_Y4'].sum()
+            df_years = pd.DataFrame({
+                'שנה': ['שנה 1', 'שנה 2', 'שנה 3', 'שנה 4'],
+                'רווח תפעולי': [_y1, _y2, _y3, _y4],
+            })
+            fig_yr = px.line(
+                df_years, x='שנה', y='רווח תפעולי',
+                title='תחזית רב-שנתית', markers=True, height=340,
+            )
+            fig_yr.add_hline(y=0, line_dash="dash", line_color="red",
+                             annotation_text="נקודת איזון", annotation_position="top right")
+            fig_yr.update_traces(line_color='#3498db', marker_size=10)
+            fig_yr.update_layout(yaxis_title="₪")
+            st.plotly_chart(fig_yr, use_container_width=True)
+    else:
+        st.info("💡 התקן `plotly` כדי לראות גרפים: `pip install plotly`")
+
+    st.divider()
+
+    # ── H: פירוט הכנסות – "כל הדרך" ────────────────────────────────────────
+    if not df_rev_all.empty:
+        st.subheader("💰 פירוט הכנסות")
+
+        _rev_col_map = {
+            'שם שירות':                  'שירות',
+            'כמות שירותים רגילים':       'כמות',
+            'תעריף יחידה ברוטו':         'תעריף ברוטו',
+            'תעריף יחידה אחרי הנחות':    'תעריף נטו',
+            'תעריף יחידה תחת cap':       'תעריף קאפ',
+            'סה"כ ברוטו':               'סה"כ ברוטו',
+            'סה"כ אחרי הנחות':          'סה"כ נטו',
+            'סה"כ אחרי קאפ':            'סה"כ קאפ',
+            'עלות תקורה':               'תקורה',
+            'סה"כ נטו לכיס':            'נטו לכיס',
+            'תרחיש אופטימי':            'אופטימי',
+            'תרחיש פסימי':              'פסימי',
+        }
+        _rev_cols_exist = [c for c in _rev_col_map if c in df_rev_all.columns]
+        rev_display = df_rev_all[_rev_cols_exist].rename(columns=_rev_col_map)
+
+        _curr_fmt = "₪%,.0f"
+        _col_cfg = {
+            'כמות':         st.column_config.NumberColumn(format="%.2f"),
+            'תעריף ברוטו':  st.column_config.NumberColumn(format=_curr_fmt),
+            'תעריף נטו':    st.column_config.NumberColumn(format=_curr_fmt),
+            'תעריף קאפ':    st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ ברוטו':   st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ נטו':     st.column_config.NumberColumn(format=_curr_fmt),
+            'סה"כ קאפ':     st.column_config.NumberColumn(format=_curr_fmt),
+            'תקורה':        st.column_config.NumberColumn(format=_curr_fmt),
+            'נטו לכיס':     st.column_config.NumberColumn(format=_curr_fmt),
+            'אופטימי':      st.column_config.NumberColumn(format=_curr_fmt),
+            'פסימי':        st.column_config.NumberColumn(format=_curr_fmt),
+        }
+        st.dataframe(rev_display, use_container_width=True, hide_index=True,
+                     column_config={k: v for k, v in _col_cfg.items() if k in rev_display.columns})
+
+        # E – Revenue bar chart (ברוטו vs נטו)
+        if _PLOTLY_AVAILABLE and len(df_rev_all) > 0:
+            _bar_df = df_rev_all[['שם שירות', 'סה"כ ברוטו', 'סה"כ נטו לכיס']].copy()
+            _bar_df = _bar_df.sort_values('סה"כ נטו לכיס', ascending=True)
+            fig_rev = go.Figure()
+            fig_rev.add_trace(go.Bar(
+                name='ברוטו', y=_bar_df['שם שירות'], x=_bar_df['סה"כ ברוטו'],
+                orientation='h', marker_color='#5dade2',
+            ))
+            fig_rev.add_trace(go.Bar(
+                name='נטו לכיס', y=_bar_df['שם שירות'], x=_bar_df['סה"כ נטו לכיס'],
+                orientation='h', marker_color='#1a8a3c',
+            ))
+            fig_rev.update_layout(
+                title='הכנסות: ברוטו vs נטו לכיס', barmode='group',
+                height=max(280, len(df_rev_all) * 55),
+                xaxis_title='₪', yaxis_title='',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            )
+            st.plotly_chart(fig_rev, use_container_width=True)
+
+    # ── H2: NET vs CAP – השוואת תרחיש נטו מול קאפ ─────────────────────────
+    st.subheader("📊 נטו מול קאפ")
+    h2_l, h2_r = st.columns(2)
+    with h2_l:
+        st.markdown("**תרחיש נטו (סטנדרט)**")
+        h2_l.metric("רווח תפעולי", f"₪{format_number_str(profit_b)}")
+        h2_l.metric("ROI", f"{roi:.1f} שנים" if roi > 0 else "—")
+        _rec_net = "✅ מומלץ" if profit_pess > 0 else ("⚠️ מותנה" if profit_b > 0 else "🛑 לא מומלץ")
+        h2_l.info(f"המלצה: **{_rec_net}**")
+    with h2_r:
+        st.markdown("**תרחיש קאפ (תקרה)**")
+        h2_r.metric("רווח תפעולי", f"₪{format_number_str(op_profit_cap)}")
+        h2_r.metric("ROI", f"{roi_cap:.1f} שנים" if roi_cap > 0 else "—")
+        _rec_cap = "✅ מומלץ" if (op_profit_cap - capex) > 0 else "🛑 לא מומלץ"
+        h2_r.info(f"המלצה: **{_rec_cap}**")
+
+    st.divider()
+
+    # ── F+הוצאות: דונאט + טבלה ──────────────────────────────────────────────
+    df_exp = df_flat[
+        df_flat['קטגוריה'].isin([Category.MANPOWER, Category.OPERATION]) &
+        (df_flat['סוג'] != 'השקעה חד-פעמית')
+    ]
+    if not df_exp.empty:
+        st.subheader("📉 פירוט הוצאות")
+        exp_l, exp_r = st.columns([1, 2])
+        with exp_l:
+            if _PLOTLY_AVAILABLE:
+                _exp_grp = df_exp.groupby('Category_Heb')['סה"כ נטו לכיס'].sum().abs()
+                fig_donut = px.pie(
+                    values=_exp_grp.values, names=_exp_grp.index,
+                    title='פירוט הוצאות', hole=0.42, height=300,
+                )
+                fig_donut.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_donut, use_container_width=True)
+        with exp_r:
+            _exp_cols = ['Category_Heb', 'שם שירות', 'כמות שירותים רגילים',
+                         'עלות לשירות', 'סה"כ נטו לכיס', 'תרחיש אופטימי', 'תרחיש פסימי']
+            _exp_cols_exist = [c for c in _exp_cols if c in df_exp.columns]
+            st.dataframe(df_exp[_exp_cols_exist], use_container_width=True, hide_index=True)
+
+    # ── השקעות ─────────────────────────────────────────────────────────────
+    df_inv = df_flat[df_flat['סוג'] == 'השקעה חד-פעמית']
+    if not df_inv.empty:
+        st.subheader("🏗️ השקעות (CAPEX)")
+        _inv_cols = ['שם שירות', 'כמות שירותים רגילים', 'עלות לשירות', 'Lifespan', 'סה"כ נטו לכיס']
+        _inv_cols_exist = [c for c in _inv_cols if c in df_inv.columns]
+        st.dataframe(df_inv[_inv_cols_exist], use_container_width=True, hide_index=True)
+
+    # ── הערות + ייצוא Excel ─────────────────────────────────────────────────
     st.divider()
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.session_state.general_comments = st.text_area("הערות הכלכלן:", value=st.session_state.general_comments)
+        st.session_state.general_comments = st.text_area(
+            "הערות הכלכלן:", value=st.session_state.general_comments
+        )
 
     with c2:
         clean_filename = re.sub(r'[\\/*?:"<>|]', "", p_name).strip() or "Project_Report"
@@ -629,8 +832,10 @@ def show_report_view(p_name: str, params: dict):
             writer.close()
             buf.seek(0)
             excel_data = buf.getvalue()
+        except PermissionError:
+            st.error("❌ הקובץ פתוח ב-Excel. סגור אותו ונסה שוב.")
         except Exception as e:
-            st.error(f"❌ שגיאה: {e}")
+            st.error(f"❌ שגיאת ייצוא ({type(e).__name__}): {e}")
 
         if excel_data:
             st.download_button(
