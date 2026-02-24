@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from constants import SESSION_STATE_DEFAULTS
-from data_loading import load_growth_data
+from data_loading import build_marginal_productivity_map, load_growth_data
 from views import show_edit_view, show_report_view
 
 # ---------------------------------------------------------------------------
@@ -191,6 +191,13 @@ def main():
         st.error(msgs[0])
         st.stop()
 
+    # ── תפוקה שולית: חישוב חד-פעמי לפי זהות האובייקט (לא מחושב מחדש בכל render)
+    _pm_id = (id(h_srv), id(h_hr))
+    if st.session_state.get('_prod_map_id') != _pm_id:
+        st.session_state['_prod_map']    = build_marginal_productivity_map(h_srv, h_hr)
+        st.session_state['_prod_map_id'] = _pm_id
+    _prod_map = st.session_state.get('_prod_map', {})
+
     # ── K+L: הצג msgs + סיכום טעינה בסרגל הצד ─────────────────────────────
     with st.sidebar:
         with st.expander("📋 סיכום טעינה", expanded=False):
@@ -214,9 +221,10 @@ def main():
             )
 
     if st.session_state.view_mode == 'edit':
-        show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params)
+        show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params,
+                       prod_map=_prod_map)
     else:
-        show_report_view(p_name, params, h_srv=h_srv, h_hr=h_hr)
+        show_report_view(p_name, params, prod_map=_prod_map)
 
 
 if __name__ == "__main__":

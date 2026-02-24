@@ -327,12 +327,9 @@ def update_model_from_editor():
 # Edit view
 # ---------------------------------------------------------------------------
 
-def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params):
-    # ── תפוקה שולית: מחשב פעם אחת מנתוני ה-Excel ──────────────────────────
-    _prod_map = build_marginal_productivity_map(h_srv, h_hr) if (
-        h_srv is not None and not h_srv.empty and
-        h_hr  is not None and not h_hr.empty
-    ) else {}
+def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params,
+                   prod_map=None):
+    _prod_map = prod_map or {}
 
     t1, t2, t3 = st.tabs(["🏗️ השקעה (CAPEX)", "💼 הוצאות תפעול (OPEX)", "💰 הכנסות (Revenue)"])
 
@@ -586,7 +583,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
 # Report view
 # ---------------------------------------------------------------------------
 
-def show_report_view(p_name: str, params: dict, h_srv=None, h_hr=None):  # noqa: C901
+def show_report_view(p_name: str, params: dict, prod_map=None):  # noqa: C901
     st.header(f"📊 דו\"ח מסכם: {p_name}")
 
     if not st.session_state.growth_items:
@@ -621,12 +618,8 @@ def show_report_view(p_name: str, params: dict, h_srv=None, h_hr=None):  # noqa:
                     )
 
     # ── חישוב ───────────────────────────────────────────────────────────────
-    _prod_map_r = build_marginal_productivity_map(h_srv, h_hr) if (
-        h_srv is not None and not h_srv.empty and
-        h_hr  is not None and not h_hr.empty
-    ) else {}
     df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-        st.session_state.growth_items, params, prod_map=_prod_map_r
+        st.session_state.growth_items, params, prod_map=(prod_map or {})
     )
 
     # נגזרות לתרחיש קאפ
