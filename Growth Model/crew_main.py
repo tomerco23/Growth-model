@@ -268,5 +268,36 @@ def main() -> None:
         print(str(result))
 
 
+# ---------------------------------------------------------------------------
+# Programmatic API (used by app.py / Streamlit)
+# ---------------------------------------------------------------------------
+
+def run_crew_workflow(workflow_name: str, api_key: str) -> tuple[str, list]:
+    """Run a workflow programmatically (e.g. called from Streamlit).
+
+    Sets ANTHROPIC_API_KEY, executes the named workflow, and returns
+    (result_str, list_of_generated_Paths).
+
+    Args:
+        workflow_name: One of the keys in WORKFLOWS ("docs", "ui", "db", "backend").
+        api_key:       Anthropic API key to use for this run.
+
+    Returns:
+        Tuple of (crew result as string, list of Path objects for output files).
+    """
+    if workflow_name not in WORKFLOWS:
+        raise ValueError(
+            f"Unknown workflow '{workflow_name}'. Valid options: {list(WORKFLOWS)}"
+        )
+    os.environ["ANTHROPIC_API_KEY"] = api_key
+    result = WORKFLOWS[workflow_name]()
+    paths = [
+        _HERE / fname
+        for fname in WORKFLOW_OUTPUTS[workflow_name]
+        if (_HERE / fname).exists()
+    ]
+    return str(result), paths
+
+
 if __name__ == "__main__":
     main()

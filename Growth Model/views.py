@@ -73,6 +73,9 @@ def render_service_filters_cascading(df_hier: pd.DataFrame, df_prices: pd.DataFr
     if missing_codes:
         options += d5[d5['Code'].isin(missing_codes)]['Original_Label'].tolist()
 
+    if not options:
+        st.info("ℹ️ אין שירותים התואמים לסינון שנבחר. נסה לשנות את הפילטרים.")
+
     return sorted(list(set(options)))
 
 
