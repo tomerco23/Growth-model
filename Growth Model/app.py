@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from constants import SESSION_STATE_DEFAULTS
-from data_loading import build_marginal_productivity_map, load_growth_data
+from data_loading import load_employee_counts, load_growth_data
 from views import show_edit_view, show_report_view
 
 # ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ def main():
             hmo = st.number_input("הנחת קופות", value=18.5) / 100
             vol = st.number_input("הנחת מחזור", value=1.9) / 100
             app = st.number_input("ערעורים", value=4.0) / 100
-            cap = st.number_input("קאפ", value=37.5) / 100
+            cap = st.number_input("קאפ", value=35.0) / 100
             no_show = st.number_input("No-Show", value=0.0) / 100
             params = {
                 "OVERHEAD_RATE": ovh,
@@ -191,12 +191,8 @@ def main():
         st.error(msgs[0])
         st.stop()
 
-    # ── תפוקה שולית: חישוב חד-פעמי לפי זהות האובייקט (לא מחושב מחדש בכל render)
-    _pm_id = (id(h_srv), id(h_hr))
-    if st.session_state.get('_prod_map_id') != _pm_id:
-        st.session_state['_prod_map']    = build_marginal_productivity_map(h_srv, h_hr)
-        st.session_state['_prod_map_id'] = _pm_id
-    _prod_map = st.session_state.get('_prod_map', {})
+    # ── מספר עובדים מ-DB_HR_Costs
+    df_emp_counts = load_employee_counts(f_in) if f_in else __import__('pandas').DataFrame()
 
     # ── K+L: הצג msgs + סיכום טעינה בסרגל הצד ─────────────────────────────
     with st.sidebar:
@@ -222,9 +218,9 @@ def main():
 
     if st.session_state.view_mode == 'edit':
         show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params,
-                       prod_map=_prod_map)
+                       df_emp_counts=df_emp_counts)
     else:
-        show_report_view(p_name, params, prod_map=_prod_map)
+        show_report_view(p_name, params, h_srv=h_srv, df_emp_counts=df_emp_counts)
 
 
 if __name__ == "__main__":
