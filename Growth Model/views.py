@@ -32,9 +32,22 @@ def save_history():
 def undo_last_action():
     if st.session_state.get('history'):
         st.session_state.growth_items = st.session_state.history.pop()
+        st.session_state['has_unsaved_changes'] = False
         st.toast("הפעולה בוטלה בהצלחה", icon="↩️")
     else:
         st.toast("אין פעולות קודמות לביטול", icon="⚠️")
+
+
+def _mark_unsaved():
+    """Called by st.data_editor on_change. Sets unsaved flag once without causing repeated reruns."""
+    if not st.session_state.get('has_unsaved_changes', False):
+        st.session_state['has_unsaved_changes'] = True
+
+
+def flush_editor_to_model():
+    """Called by Save button. Syncs editor state → growth_items and clears the unsaved flag."""
+    update_model_from_editor()
+    st.session_state['has_unsaved_changes'] = False
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +530,16 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 st.session_state.growth_items, params
             )
         st.markdown("### 🛠️ עריכה ומחיקה")
-        if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
-            undo_last_action()
+        _btn_col1, _btn_col2 = st.columns([2, 1])
+        with _btn_col1:
+            if st.button("💾 שמור שינויים", type="primary", use_container_width=True):
+                flush_editor_to_model()
+        with _btn_col2:
+            if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
+                undo_last_action()
+
+        if st.session_state.get('has_unsaved_changes', False):
+            st.warning("יש שינויים שטרם נשמרו. לחץ על 'שמור שינויים' לפני מעבר לדו\"ח.")
 
         editable_df = df_flat[df_flat['Row_Type'] == 'Main'].copy()
         if 'Delete' not in editable_df.columns:
@@ -556,13 +577,15 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
             hide_index=True,
             use_container_width=True,
             key="data_editor_edit_mode",
-            on_change=update_model_from_editor,
+            on_change=_mark_unsaved,
             num_rows="fixed",
             height=600,
         )
 
     st.divider()
     if st.button("📄 עבור לתצוגה מקדימה של הדו\"ח", type="primary", use_container_width=True):
+        if st.session_state.get('has_unsaved_changes', False):
+            flush_editor_to_model()
         st.session_state.view_mode = 'report'
         st.rerun()
 
@@ -942,9 +965,7 @@ def show_report_view(  # noqa: C901
     st.divider()
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.session_state.general_comments = st.text_area(
-            "הערות הכלכלן:", value=st.session_state.general_comments
-        )
+        st.text_area("הערות הכלכלן:", key='general_comments')
 
     with c2:
         clean_filename = re.sub(r'[\\/*?:"<>|]', "", p_name).strip() or "Project_Report"

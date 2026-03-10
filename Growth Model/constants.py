@@ -21,5 +21,5 @@ SESSION_STATE_DEFAULTS = {
     'latest_df_flat_mapping': {},
     'srv_multi_select': [],
     'def6': [],
-    '_confirm_reset': False,
+    'has_unsaved_changes': False,
 }
