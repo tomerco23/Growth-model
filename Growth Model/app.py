@@ -53,7 +53,7 @@ def main():
             hmo = st.number_input("הנחת קופות", value=18.5) / 100
             vol = st.number_input("הנחת מחזור", value=1.9) / 100
             app = st.number_input("ערעורים", value=4.0) / 100
-            cap = st.number_input("קאפ", value=37.5) / 100
+            cap = st.number_input("קאפ", value=35.0) / 100
             no_show = st.number_input("No-Show", value=0.0) / 100
             params = {
                 "OVERHEAD_RATE": ovh,
