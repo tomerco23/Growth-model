@@ -63,12 +63,298 @@ def _add_formats(wb) -> dict:
         'sum_inv_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bottom': 6, 'bold': True}),
         'sum_profit_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'bg_color': '#EBF1DE'}),
         'text_box': wb.add_format({'border': 1, 'align': 'right', 'valign': 'top', 'text_wrap': True, 'bg_color': '#FFFFCC'}),
+        'assumption_box': wb.add_format({'border': 2, 'align': 'right', 'valign': 'vcenter', 'text_wrap': True, 'bg_color': '#FFF2CC', 'bold': False}),
+        'assumption_title': wb.add_format({'border': 2, 'align': 'right', 'valign': 'vcenter', 'bg_color': '#FFE699', 'bold': True}),
+        'formula_cell': wb.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter', 'italic': True, 'font_color': '#444444', 'font_size': 9, 'text_wrap': True, 'bg_color': '#F9F9F9'}),
+        'mgmt_header': wb.add_format({'bold': True, 'bg_color': '#2E75B6', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True}),
+        'mgmt_title_main': wb.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#1F4E79', 'font_color': 'white'}),
+        'mgmt_title_sec': wb.add_format({'bold': True, 'font_size': 13, 'align': 'right', 'valign': 'vcenter', 'bg_color': '#BDD7EE', 'top': 2}),
+        'mgmt_profit_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'bg_color': '#E2EFDA', 'font_size': 11}),
+        'mgmt_profit_label': wb.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter', 'bold': True, 'bg_color': '#E2EFDA', 'font_size': 11}),
+        'mgmt_curr': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
+        'mgmt_normal': wb.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter'}),
+        'mgmt_normal_bold': wb.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter', 'bold': True, 'bg_color': '#F2F2F2'}),
+        'mgmt_curr_bold': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'bg_color': '#F2F2F2'}),
+        'mgmt_sum_label': wb.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter'}),
+        'mgmt_sum_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
+        'assump_pct': wb.add_format({'num_format': '0.0%', 'border': 2, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFF2CC', 'bold': True}),
+        'assump_pct_ref': wb.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFF2CC'}),
     }
+
+
+def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params):
+    """Management report: assumption cells at fixed positions, all revenue cells use Excel formulas.
+    Clicking any cell reveals the formula so management can trace every calculation."""
+    ws = wb.add_worksheet('דוח מנהלים')
+    ws.right_to_left()
+
+    # ---- Derived totals -------------------------------------------------
+    df_op_only = df_flat[(df_flat['קטגוריה'] == 'Operation') & (df_flat['סוג'] != 'השקעה חד-פעמית')]
+    total_op_exp = abs(df_op_only['סה"כ נטו לכיס'].sum())
+    df_hr_only = df_flat[df_flat['קטגוריה'] == 'Manpower']
+    total_hr_exp = abs(df_hr_only['סה"כ נטו לכיס'].sum())
+    total_capex = abs(capex)
+    total_net_profit = prof_b - capex
+    df_rev_rows = df_flat[df_flat['קטגוריה'] == 'Revenue']
+    total_rev_cap = df_rev_rows['סה"כ אחרי קאפ'].sum()
+    op_profit_cap = total_rev_cap - total_op_exp - total_hr_exp
+    total_net_profit_cap = op_profit_cap - total_capex
+    roi_cap = (total_capex / op_profit_cap) if op_profit_cap > 0 else 0
+    rec_cap = "✅ מומלץ" if total_net_profit_cap > 0 else "🛑 לא מומלץ"
+
+    hmo       = params.get('HMO_DISCOUNT', 0)
+    vol       = params.get('VOL_DISCOUNT', 0)
+    appeals   = params.get('APPEALS_PROV', 0)
+    no_show_g = params.get('NO_SHOW_RATE', 0)
+    overhead  = params.get('OVERHEAD_RATE', 0)
+    cap_f     = params.get('CAP_RATE_FACTOR', 0)
+
+    # ---- Fixed assumption cell positions (0-based rows, column B = col 1) ----
+    # These cells are referenced by formulas in the revenue table.
+    # Row 2 → Excel B3 = HMO,  Row 3 → B4 = VOL,  Row 4 → B5 = APPEALS
+    # Row 5 → B6 = NO_SHOW,    Row 6 → B7 = OVERHEAD,  Row 7 → B8 = CAP
+    HMO_ROW, VOL_ROW, APP_ROW = 2, 3, 4
+    NS_ROW,  OVH_ROW, CAP_ROW = 5, 6, 7
+    AC = 1  # assumption column index (B)
+    hmo_ref = f'$B${HMO_ROW + 1}'   # $B$3
+    vol_ref = f'$B${VOL_ROW + 1}'   # $B$4
+    app_ref = f'$B${APP_ROW + 1}'   # $B$5
+    ns_ref  = f'$B${NS_ROW  + 1}'   # $B$6
+    ovh_ref = f'$B${OVH_ROW + 1}'   # $B$7
+    cap_ref = f'$B${CAP_ROW + 1}'   # $B$8
+
+    # Revenue table column indices (0-based, A–L)
+    CN, CQ, CG = 0, 1, 2          # Name, Qty, Gross tariff
+    CH, CV, CF, CS = 3, 4, 5, 6   # HMO%, VOL%, APPEALS%, NO_SHOW%
+    CNT, CCT = 7, 8                # Net tariff (formula), CAP tariff (formula)
+    CGT, CNTK, CCTL = 9, 10, 11   # Total gross, Total net, Total CAP (all formulas)
+
+    # ---- Row 0: Title ---------------------------------------------------
+    ws.set_row(0, 30)
+    ws.merge_range(0, 0, 0, 11, f'דוח מנהלים: {p_name}', fmt['mgmt_title_main'])
+
+    # ---- Row 1: Assumptions section header (left) + verbal analysis (right) --
+    ws.merge_range(1, 0, 1, 4,
+                   'הנחות החישוב  –  ניתן לשנות ערכים בעמודה B ולראות השפעה על הנוסחאות',
+                   fmt['assumption_title'])
+    ws.merge_range(1, 6, 9, 11,
+                   generate_verbal_analysis(prof_b, 0, prof_p, capex, -opex, rev, roi, df_flat),
+                   fmt['text_box'])
+
+    # ---- Rows 2–7: Assumption values at FIXED positions -----------------
+    for ar, label, val in [
+        (HMO_ROW, 'הנחת קופות חולים',        hmo),
+        (VOL_ROW, 'הנחת מחזור',               vol),
+        (APP_ROW, 'הפרשה לערעורים',           appeals),
+        (NS_ROW,  'אי-הגעה (No-Show)',        no_show_g),
+        (OVH_ROW, 'תקורה (Overhead)',         overhead),
+        (CAP_ROW, 'מקדם קאפ (CAP)',           cap_f),
+    ]:
+        ws.write(ar, 0, label, fmt['assumption_box'])
+        ws.write(ar, AC, val, fmt['assump_pct'])
+
+    # ---- Row 9+: Financial summary table (plain values) -----------------
+    row = 9
+    ws.write(row, 0, 'מדד', fmt['mgmt_header'])
+    ws.write(row, 1, 'תרחיש נטו (₪)', fmt['mgmt_header'])
+    ws.write(row, 2, 'תרחיש קאפ (₪)', fmt['mgmt_header'])
+    row += 1
+    for label, vn, vc, profit in [
+        ('סה"כ הכנסות שנתיות',       rev,             total_rev_cap,       False),
+        ('סה"כ הוצאות כוח אדם',      -total_hr_exp,   -total_hr_exp,       False),
+        ('סה"כ הוצאות תפעול',        -total_op_exp,   -total_op_exp,       False),
+        ('השקעה חד-פעמית (CAPEX)',   -total_capex,    -total_capex,        False),
+        ('רווח תפעולי (EBITDA)',      prof_b,           op_profit_cap,      True),
+        ('רווח כולל (בניכוי השקעה)', total_net_profit, total_net_profit_cap, True),
+    ]:
+        lf = fmt['mgmt_profit_label'] if profit else fmt['mgmt_sum_label']
+        vf = fmt['mgmt_profit_val']   if profit else fmt['mgmt_sum_val']
+        ws.write(row, 0, label, lf)
+        ws.write(row, 1, vn,    vf)
+        ws.write(row, 2, vc,    vf)
+        row += 1
+    ws.write(row, 0, 'ROI – שנים להחזר השקעה', fmt['mgmt_sum_label'])
+    ws.write(row, 1, f'{roi:.1f}',     fmt['mgmt_sum_val'])
+    ws.write(row, 2, f'{roi_cap:.1f}', fmt['mgmt_sum_val'])
+    row += 1
+    ws.write(row, 0, 'המלצה עסקית', fmt['mgmt_sum_label'])
+    ws.write(row, 1, rec,     fmt['mgmt_sum_val'])
+    ws.write(row, 2, rec_cap, fmt['mgmt_sum_val'])
+    row += 2
+
+    # ---- Revenue detail – interactive Excel formulas --------------------
+    if not df_rev_rows.empty:
+        ws.merge_range(row, 0, row, 11,
+                       'פירוט הכנסות – לחץ על כל תא כדי לראות את נוסחת החישוב',
+                       fmt['mgmt_title_sec'])
+        row += 1
+        for i, h in enumerate([
+            'שם השירות', 'כמות (ביקושים)', 'תעריף ברוטו (₪)',
+            'הנחת קופות', 'הנחת מחזור', 'הפרשה לערעורים', 'No-Show',
+            'תעריף נטו (₪)', 'תעריף קאפ (₪)',
+            'סה"כ ברוטו (₪)', 'סה"כ נטו לכיס (₪)', 'סה"כ קאפ (₪)',
+        ]):
+            ws.write(row, i, h, fmt['mgmt_header'])
+        ws.set_row(row, 28)
+        row += 1
+
+        data_start_excel = row + 1   # 1-based Excel row of first data row
+        s_gross_t = s_net_t = s_cap_t = 0
+
+        for _, r in df_rev_rows.iterrows():
+            er = row + 1             # 1-based Excel row for this data row
+            gross   = r['תעריף יחידה ברוטו']
+            net_tar = r['תעריף יחידה אחרי הנחות']
+            cap_tar = r['תעריף יחידה תחת cap']
+            qty     = r['כמות שירותים רגילים']
+            gross_t = r['סה"כ ברוטו']
+            net_t   = r['סה"כ נטו לכיס']
+            cap_t   = r['סה"כ אחרי קאפ']
+
+            # Detect private service: discount chain was not applied
+            is_private = gross > 0 and hmo > 0 and abs(gross - net_tar) / gross < 0.001
+
+            ws.write(row, CN, r['שם שירות'], fmt['mgmt_normal'])
+            ws.write(row, CQ, qty,            fmt['mgmt_normal'])
+            ws.write(row, CG, gross,           fmt['mgmt_curr'])
+
+            # Discount columns D–G (yellow): formula refs to assumption cells, or 0 if private
+            if is_private:
+                ws.write(row, CH, 0, fmt['assump_pct_ref'])
+                ws.write(row, CV, 0, fmt['assump_pct_ref'])
+                ws.write(row, CF, 0, fmt['assump_pct_ref'])
+            else:
+                ws.write_formula(row, CH, f'={hmo_ref}', fmt['assump_pct_ref'], hmo)
+                ws.write_formula(row, CV, f'={vol_ref}', fmt['assump_pct_ref'], vol)
+                ws.write_formula(row, CF, f'={app_ref}', fmt['assump_pct_ref'], appeals)
+            ws.write_formula(row, CS, f'={ns_ref}', fmt['assump_pct_ref'], no_show_g)
+
+            # H: תעריף נטו = ברוטו × (1−קופות) × (1−מחזור) × (1−הפרשה)
+            ws.write_formula(row, CNT,
+                f'=C{er}*(1-D{er})*(1-E{er})*(1-F{er})',
+                fmt['mgmt_curr'], net_tar)
+
+            # I: תעריף קאפ = ברוטו × מקדם קאפ
+            ws.write_formula(row, CCT,
+                f'=C{er}*{cap_ref}',
+                fmt['mgmt_curr'], cap_tar)
+
+            # J: סה"כ ברוטו = כמות × (1−NoShow) × ברוטו
+            ws.write_formula(row, CGT,
+                f'=B{er}*(1-G{er})*C{er}',
+                fmt['mgmt_curr'], gross_t)
+
+            # K: סה"כ נטו לכיס = כמות × (1−NoShow) × תעריף נטו × (1−תקורה)
+            ws.write_formula(row, CNTK,
+                f'=B{er}*(1-G{er})*H{er}*(1-{ovh_ref})',
+                fmt['mgmt_curr'], net_t)
+
+            # L: סה"כ קאפ = כמות × (1−NoShow) × תעריף קאפ
+            ws.write_formula(row, CCTL,
+                f'=B{er}*(1-G{er})*I{er}',
+                fmt['mgmt_curr'], cap_t)
+
+            s_gross_t += gross_t
+            s_net_t   += net_t
+            s_cap_t   += cap_t
+            row += 1
+
+        # Total row with SUM formulas
+        data_end_excel = row    # after loop, row equals last data row's 1-based index
+        ws.write(row, CN, 'סה"כ', fmt['mgmt_normal_bold'])
+        ws.write_formula(row, CGT,  f'=SUM(J{data_start_excel}:J{data_end_excel})', fmt['mgmt_curr_bold'], s_gross_t)
+        ws.write_formula(row, CNTK, f'=SUM(K{data_start_excel}:K{data_end_excel})', fmt['mgmt_curr_bold'], s_net_t)
+        ws.write_formula(row, CCTL, f'=SUM(L{data_start_excel}:L{data_end_excel})', fmt['mgmt_curr_bold'], s_cap_t)
+        row += 2
+
+    # ---- Manpower (simplified, no formulas needed) ----------------------
+    df_manpower = df_flat[df_flat['קטגוריה'] == 'Manpower']
+    if not df_manpower.empty:
+        ws.merge_range(row, 0, row, 11, 'פירוט כוח אדם', fmt['mgmt_title_sec'])
+        row += 1
+        for i, h in enumerate(['תפקיד / משרה', 'תקנים / עובדים', 'עלות שנתית ליחידה (₪)', 'סה"כ עלות (₪)']):
+            ws.write(row, i, h, fmt['mgmt_header'])
+        row += 1
+        s_mp = 0
+        df_mp_std   = df_manpower[df_manpower['Calc_Mode'] == 'FTE']
+        df_mp_shift = df_manpower[df_manpower['Calc_Mode'].isin(['Daily', 'Hourly'])]
+        for _, r in df_mp_std.iterrows():
+            total_cost = abs(r['סה"כ נטו לכיס']) + r['כמות שירותי ססיה'] * r['עלות ססיה']
+            ws.write(row, 0, r['שם שירות'],              fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],  fmt['mgmt_normal'])
+            ws.write(row, 2, r['עלות לשירות'],           fmt['mgmt_curr'])
+            ws.write(row, 3, total_cost,                  fmt['mgmt_curr'])
+            s_mp += total_cost; row += 1
+        for _, r in df_mp_shift.iterrows():
+            ws.write(row, 0, r['שם שירות'],              fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],  fmt['mgmt_normal'])
+            ws.write(row, 2, '',                          fmt['mgmt_normal'])
+            ws.write(row, 3, abs(r['סה"כ נטו לכיס']),  fmt['mgmt_curr'])
+            s_mp += abs(r['סה"כ נטו לכיס']); row += 1
+        ws.write(row, 0, 'סה"כ כוח אדם', fmt['mgmt_normal_bold'])
+        ws.write(row, 3, s_mp, fmt['mgmt_curr_bold'])
+        row += 2
+
+    # ---- Operations -----------------------------------------------------
+    df_op = df_flat[(df_flat['קטגוריה'] == 'Operation') & (df_flat['סוג'] != 'השקעה חד-פעמית')]
+    if not df_op.empty:
+        ws.merge_range(row, 0, row, 11, 'פירוט הוצאות תפעול שוטף', fmt['mgmt_title_sec'])
+        row += 1
+        for i, h in enumerate(['סעיף הוצאה', 'עלות יחידה (₪)', 'כמות', 'סה"כ (₪)']):
+            ws.write(row, i, h, fmt['mgmt_header'])
+        row += 1
+        s_op = 0
+        for _, r in df_op.iterrows():
+            ws.write(row, 0, r['שם שירות'],             fmt['mgmt_normal'])
+            ws.write(row, 1, r['עלות לשירות'],          fmt['mgmt_curr'])
+            ws.write(row, 2, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
+            ws.write(row, 3, r['סה"כ נטו לכיס'],       fmt['mgmt_curr'])
+            s_op += r['סה"כ נטו לכיס']; row += 1
+        ws.write(row, 0, 'סה"כ תפעול', fmt['mgmt_normal_bold'])
+        ws.write(row, 3, s_op, fmt['mgmt_curr_bold'])
+        row += 2
+
+    # ---- Investments ----------------------------------------------------
+    df_inv = df_flat[df_flat['סוג'] == 'השקעה חד-פעמית']
+    if not df_inv.empty:
+        ws.merge_range(row, 0, row, 11, 'פירוט השקעות (CAPEX)', fmt['mgmt_title_sec'])
+        row += 1
+        for i, h in enumerate(['סעיף השקעה', 'עלות יחידה (₪)', 'כמות', 'שנות חיים', 'סה"כ (₪)']):
+            ws.write(row, i, h, fmt['mgmt_header'])
+        row += 1
+        si = 0
+        for _, r in df_inv.iterrows():
+            ws.write(row, 0, r['שם שירות'],             fmt['mgmt_normal'])
+            ws.write(row, 1, r['עלות לשירות'],          fmt['mgmt_curr'])
+            ws.write(row, 2, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
+            ws.write(row, 3, r.get('Lifespan', 10),     fmt['mgmt_normal'])
+            ws.write(row, 4, r['סה"כ נטו לכיס'],       fmt['mgmt_curr'])
+            si += r['סה"כ נטו לכיס']; row += 1
+        ws.write(row, 0, 'סה"כ השקעות', fmt['mgmt_normal_bold'])
+        ws.write(row, 4, si, fmt['mgmt_curr_bold'])
+        row += 2
+
+    # ---- Comments -------------------------------------------------------
+    if comments:
+        ws.write(row, 0, 'הערות נוספות', fmt['mgmt_header'])
+        row += 1
+        ws.merge_range(row, 0, row + 3, 11, comments, fmt['text_box'])
+
+    # ---- Column widths --------------------------------------------------
+    ws.set_column('A:A', 30)   # service name
+    ws.set_column('B:B', 14)   # qty / assumption value
+    ws.set_column('C:C', 16)   # gross tariff
+    ws.set_column('D:G', 13)   # discount columns (yellow)
+    ws.set_column('H:I', 16)   # calculated tariffs
+    ws.set_column('J:L', 18)   # totals
 
 
 def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params):
     wb = writer.book
     fmt = _add_formats(wb)
+
+    # Create management-friendly sheet first so it appears as the first tab
+    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params)
 
     show_scenarios = not (
         (df_flat['Pct_Opt_Raw'] == 0).all() and (df_flat['Pct_Pess_Raw'] == 0).all()
