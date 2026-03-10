@@ -5,6 +5,7 @@ import re
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     import plotly.express as px
@@ -571,11 +572,34 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 num_rows="fixed",
                 height=600,
             )
-            if st.form_submit_button("💾 שמור שינויים  (Enter ↵)", type="primary", use_container_width=True):
+            if st.form_submit_button("💾 שמור שינויים  (Ctrl+D)", type="primary", use_container_width=True):
                 flush_editor_to_model()
 
         if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
             undo_last_action()
+
+        # Ctrl+D keyboard shortcut → clicks the save button
+        components.html("""
+<script>
+(function () {
+    if (window.parent._ctrlDSaveListenerAdded) return;
+    window.parent._ctrlDSaveListenerAdded = true;
+    window.parent.document.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+            e.preventDefault();
+            e.stopPropagation();
+            var btns = window.parent.document.querySelectorAll('button');
+            for (var i = 0; i < btns.length; i++) {
+                if (btns[i].textContent.indexOf('שמור שינויים') !== -1) {
+                    btns[i].click();
+                    break;
+                }
+            }
+        }
+    }, true);
+})();
+</script>
+""", height=0)
 
     st.divider()
     if st.button("📄 עבור לתצוגה מקדימה של הדו\"ח", type="primary", use_container_width=True):
