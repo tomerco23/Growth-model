@@ -530,16 +530,6 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 st.session_state.growth_items, params
             )
         st.markdown("### 🛠️ עריכה ומחיקה")
-        _btn_col1, _btn_col2 = st.columns([2, 1])
-        with _btn_col1:
-            if st.button("💾 שמור שינויים", type="primary", use_container_width=True):
-                flush_editor_to_model()
-        with _btn_col2:
-            if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
-                undo_last_action()
-
-        if st.session_state.get('has_unsaved_changes', False):
-            st.warning("יש שינויים שטרם נשמרו. לחץ על 'שמור שינויים' לפני מעבר לדו\"ח.")
 
         editable_df = df_flat[df_flat['Row_Type'] == 'Main'].copy()
         if 'Delete' not in editable_df.columns:
@@ -558,33 +548,39 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         if 'Lifespan' in df_flat.columns:
             cols_order.append('Lifespan')
 
-        st.data_editor(
-            editable_df[cols_order],
-            column_config={
-                "Delete": st.column_config.CheckboxColumn("מחק?"),
-                "Item_Index": st.column_config.Column(disabled=True, width=None),
-                "Category_Heb": st.column_config.Column("קטגוריה", disabled=True),
-                "שם שירות": st.column_config.TextColumn("שם הפריט", width="large"),
-                "כמות שירותים רגילים": st.column_config.NumberColumn("כמות / FTE", format="%.2f"),
-                "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%.0f"),
-                "כמות שירותי ססיה": st.column_config.NumberColumn("כמות ססיה (שנתי)", format="%.0f"),
-                "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%.0f"),
-                "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%.0f"),
-                "Pct_Opt_Raw": st.column_config.NumberColumn("אופטימי %", format="%d%%"),
-                "Pct_Pess_Raw": st.column_config.NumberColumn("פסימי %", format="%d%%"),
-                "Lifespan": st.column_config.NumberColumn("שנות חיים", format="%d"),
-            },
-            hide_index=True,
-            use_container_width=True,
-            key="data_editor_edit_mode",
-            on_change=_mark_unsaved,
-            num_rows="fixed",
-            height=600,
-        )
+        with st.form("edit_delete_form", clear_on_submit=False):
+            st.data_editor(
+                editable_df[cols_order],
+                column_config={
+                    "Delete": st.column_config.CheckboxColumn("מחק?"),
+                    "Item_Index": st.column_config.Column(disabled=True, width=None),
+                    "Category_Heb": st.column_config.Column("קטגוריה", disabled=True),
+                    "שם שירות": st.column_config.TextColumn("שם הפריט", width="large"),
+                    "כמות שירותים רגילים": st.column_config.NumberColumn("כמות / FTE", format="%.2f"),
+                    "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%.0f"),
+                    "כמות שירותי ססיה": st.column_config.NumberColumn("כמות ססיה (שנתי)", format="%.0f"),
+                    "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%.0f"),
+                    "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%.0f"),
+                    "Pct_Opt_Raw": st.column_config.NumberColumn("אופטימי %", format="%d%%"),
+                    "Pct_Pess_Raw": st.column_config.NumberColumn("פסימי %", format="%d%%"),
+                    "Lifespan": st.column_config.NumberColumn("שנות חיים", format="%d"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="data_editor_edit_mode",
+                num_rows="fixed",
+                height=600,
+            )
+            if st.form_submit_button("💾 שמור שינויים  (Enter ↵)", type="primary", use_container_width=True):
+                flush_editor_to_model()
+
+        if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
+            undo_last_action()
 
     st.divider()
     if st.button("📄 עבור לתצוגה מקדימה של הדו\"ח", type="primary", use_container_width=True):
-        if st.session_state.get('has_unsaved_changes', False):
+        _editor_state = st.session_state.get("data_editor_edit_mode", {})
+        if _editor_state.get("edited_rows") or _editor_state.get("deleted_rows"):
             flush_editor_to_model()
         st.session_state.view_mode = 'report'
         st.rerun()
