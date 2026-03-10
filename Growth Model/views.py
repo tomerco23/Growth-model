@@ -15,9 +15,8 @@ except ImportError:
 
 from calculations import calculate_detailed_rows
 from constants import CAT_MAP, Category
-from data_loading import build_marginal_productivity_map
 from report import create_hybrid_report_sheet, generate_verbal_analysis
-from utils import format_number_str, normalize_code
+from utils import format_number_str
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +327,7 @@ def update_model_from_editor():
 # ---------------------------------------------------------------------------
 
 def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params,
-                   prod_map=None):
-    _prod_map = prod_map or {}
+                   df_emp_counts=None):
 
     t1, t2, t3 = st.tabs(["🏗️ השקעה (CAPEX)", "💼 הוצאות תפעול (OPEX)", "💰 הכנסות (Revenue)"])
 
@@ -479,18 +477,6 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 match = df_srv_prices[df_srv_prices['Code'].astype(str) == str(code)]
                 if not match.empty:
                     st.info(f"💰 **תעריף ברוטו ליחידה:** ₪{format_number_str(float(match['Tariff'].values[0]))}")
-                # ── תפוקה שולית לשירות הנבחר ─────────────────────────────
-                _norm = normalize_code(code)
-                _mp   = _prod_map.get(_norm or "", {})
-                if _mp and _mp.get('total_services', 0) > 0:
-                    st.success(
-                        f"📊 **תפוקה שולית היסטורית לשירות זה:**  "
-                        f"סה\"כ {_mp['total_services']:,.0f} שירותים בנתוני הבסיס | "
-                        f"{_mp['total_fte']:,.1f} תקנים במחלקה | "
-                        f"**{_mp['productivity']:,.1f} שירותים לתקן**"
-                    )
-                elif _prod_map:
-                    st.caption("ℹ️ אין נתון היסטורי לשירות זה בקובץ DB_Service_count")
         else:
             c_man1, c_man2 = st.columns([3, 1])
             c_man1.text_input("שם השירות", key="srv_man_name")
@@ -521,10 +507,14 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
             col_disc.number_input("אחוז הנחות כולל (%)", min_value=-100.0, max_value=100.0, value=combined_discount, step=1.0, key="srv_disc")
         st.button("➕ הוסף הכנסה/ות", on_click=add_srv_item, args=(df_srv_prices, params))
 
+        st.divider()
+        with st.expander("🔬 כלי חיזוי תפוקה שולית – בחר שירות ועובד"):
+            show_marginal_productivity_tool(h_srv, df_emp_counts)
+
     if st.session_state.growth_items:
         with st.spinner("מחשב..."):
             df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-                st.session_state.growth_items, params, prod_map=_prod_map
+                st.session_state.growth_items, params
             )
         st.markdown("### 🛠️ עריכה ומחיקה")
         if st.button("↩️ ביטול פעולה אחרונה", use_container_width=True):
@@ -534,10 +524,8 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         if 'Delete' not in editable_df.columns:
             editable_df.insert(0, 'Delete', False)
 
-        def adjust_cost_for_display(row):
-            return row['עלות לשירות'] / 12 if row['Category_Heb'] == CAT_MAP[Category.MANPOWER] else row['עלות לשירות']
-
-        editable_df['עלות לשירות'] = editable_df.apply(adjust_cost_for_display, axis=1)
+        manpower_mask = editable_df['Category_Heb'] == CAT_MAP[Category.MANPOWER]
+        editable_df.loc[manpower_mask, 'עלות לשירות'] = editable_df.loc[manpower_mask, 'עלות לשירות'] / 12
         editable_df.reset_index(drop=True, inplace=True)
         st.session_state['latest_df_flat_mapping'] = dict(zip(editable_df.index, editable_df['Item_Index']))
 
@@ -580,10 +568,135 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
 
 
 # ---------------------------------------------------------------------------
+# Marginal-productivity forecast tool
+# ---------------------------------------------------------------------------
+
+def show_marginal_productivity_tool(h_srv: pd.DataFrame, df_emp_counts: pd.DataFrame):
+    """
+    כלי חיזוי תפוקה שולית אינטראקטיבי.
+
+    המשתמש בוחר שירות (מונה) + סוג עובד (מכנה).
+    המערכת מחשבת תפוקה שולית היסטורית וחיזוי לגיוס.
+    """
+    if h_srv is None or h_srv.empty or df_emp_counts is None or df_emp_counts.empty:
+        st.info("⚠️ נדרשים נתוני DB_Service_count ו-DB_HR_Costs בקובץ HR כדי להפעיל כלי זה.")
+        return
+
+    st.markdown(
+        "בחר **שירות** (מונה) ו**סוג עובד** (מכנה) – "
+        "המערכת תחשב תפוקה שולית היסטורית ותחזית לגיוס עובדים."
+    )
+
+    col_a, col_b = st.columns(2)
+
+    # ── שלב 1: בחירת שירות ────────────────────────────────────────────────
+    with col_a:
+        st.markdown("**שלב 1 – שירות**")
+        svc_labels = sorted(
+            h_srv['Original_Label'].dropna().astype(str).unique().tolist()
+        )
+        if not svc_labels:
+            st.warning("לא נמצאו שירותים ב-DB_Service_count.")
+            return
+        sel_svc = st.selectbox(
+            "שירות", svc_labels,
+            key="mp_tool_service", label_visibility="collapsed",
+        )
+
+    # ── שלב 2: בחירת סוג עובד ─────────────────────────────────────────────
+    with col_b:
+        st.markdown("**שלב 2 – סוג עובד**")
+        if 'Job Desc' not in df_emp_counts.columns:
+            st.warning("לא נמצאה עמודת 'Job Desc' בנתוני העובדים.")
+            return
+        job_opts = sorted(
+            df_emp_counts['Job Desc'].dropna().astype(str).unique().tolist()
+        )
+        sel_job = st.selectbox(
+            "סוג עובד", job_opts,
+            key="mp_tool_job", label_visibility="collapsed",
+        )
+
+    if not sel_svc or not sel_job:
+        return
+
+    # ── חישוב היסטורי ─────────────────────────────────────────────────────
+    # מונה: סך שירותים לשירות הנבחר (כל החודשים)
+    srv_rows = h_srv[h_srv['Original_Label'] == sel_svc]
+    total_services = float(
+        pd.to_numeric(srv_rows['Value'], errors='coerce').fillna(0).sum()
+    )
+
+    # מכנה: סך חודשי-עובד לסוג העובד שנבחר
+    emp_rows = df_emp_counts[df_emp_counts['Job Desc'] == sel_job]
+    total_emp_months = float(emp_rows['Total_Employee_Months'].sum()) if not emp_rows.empty else 0.0
+    avg_monthly_emp  = float(emp_rows['Avg_Monthly_Employees'].sum()) if not emp_rows.empty else 0.0
+    months_count     = int(emp_rows['Months_Count'].iloc[0])          if not emp_rows.empty else 0
+
+    productivity = round(total_services / total_emp_months, 4) if total_emp_months > 0 else 0.0
+
+    # ── הצגת נתונים היסטוריים ─────────────────────────────────────────────
+    st.divider()
+    st.markdown("**📊 נתונים היסטוריים:**")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "שירותים שניתנו (כל התקופה)",
+        f"{total_services:,.0f}",
+    )
+    m2.metric(
+        "חודשי-עובד (סוג זה)",
+        f"{total_emp_months:,.1f}",
+        help=f"ממוצע {avg_monthly_emp:,.1f} עובד/ים × {months_count} חודשים",
+    )
+    m3.metric(
+        "ממוצע עובדים/חודש",
+        f"{avg_monthly_emp:,.1f}",
+    )
+    m4.metric(
+        "תפוקה שולית",
+        f"{productivity:,.2f}",
+        help="שירותים לחודשי-עובד = שירותים ÷ (עובדים × חודשים)",
+    )
+
+    # ── חיזוי ─────────────────────────────────────────────────────────────
+    st.markdown("**🔮 חיזוי: כמה שירותים יתרמו עובדים נוספים?**")
+    fc1, fc2 = st.columns(2)
+    n_emp = fc1.number_input(
+        "מספר עובדים לגיוס",
+        min_value=0.1, max_value=500.0, value=1.0, step=0.5,
+        format="%.1f", key="mp_tool_n_emp",
+    )
+    m_months_fc = fc2.number_input(
+        "מספר חודשי פעילות",
+        min_value=1, max_value=120, value=12, step=1,
+        key="mp_tool_months",
+    )
+
+    if productivity > 0:
+        forecast_services = n_emp * m_months_fc * productivity
+        st.success(
+            f"📈 **תחזית:**  "
+            f"{n_emp:,.1f} עובד/ים × {m_months_fc} חודשים "
+            f"× {productivity:,.2f} שירותים/חודשי-עובד "
+            f"= **{forecast_services:,.0f} שירותים נוספים**"
+        )
+    else:
+        st.warning(
+            "⚠️ לא ניתן לחשב תחזית – "
+            "לא נמצאו חודשי-עובד לסוג שנבחר בנתוני DB_HR_Costs."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Report view
 # ---------------------------------------------------------------------------
 
-def show_report_view(p_name: str, params: dict, prod_map=None):  # noqa: C901
+def show_report_view(  # noqa: C901
+    p_name: str,
+    params: dict,
+    h_srv: pd.DataFrame = None,
+    df_emp_counts: pd.DataFrame = None,
+):
     st.header(f"📊 דו\"ח מסכם: {p_name}")
 
     if not st.session_state.growth_items:
@@ -619,12 +732,12 @@ def show_report_view(p_name: str, params: dict, prod_map=None):  # noqa: C901
 
     # ── חישוב ───────────────────────────────────────────────────────────────
     df_flat, capex, opex, rev, profit_b, profit_opt, profit_pess, roi = calculate_detailed_rows(
-        st.session_state.growth_items, params, prod_map=(prod_map or {})
+        st.session_state.growth_items, params
     )
 
     # נגזרות לתרחיש קאפ
     df_rev_all  = df_flat[(df_flat['קטגוריה'] == Category.REVENUE) & (df_flat['Row_Type'] == 'Main')]
-    df_op_only  = df_flat[(df_flat['קטגוריה'] == Category.OPERATION) & (df_flat['סוג'] != 'השקעה חד-פעמית')]
+    df_op_only  = df_flat[(df_flat['קטגוריה'] == Category.OPERATION) & (df_flat['סוג'] != 'השקעה חד-פעמית') & (df_flat['Row_Type'] != 'SessionInfo')]
     df_hr_only  = df_flat[df_flat['קטגוריה'] == Category.MANPOWER]
     total_rev_cap  = df_rev_all['סה"כ אחרי קאפ'].sum()
     total_op_exp   = abs(df_op_only['סה"כ נטו לכיס'].sum())
@@ -734,10 +847,6 @@ def show_report_view(p_name: str, params: dict, prod_map=None):  # noqa: C901
             'סה"כ נטו לכיס':            'נטו לכיס',
             'תרחיש אופטימי':            'אופטימי',
             'תרחיש פסימי':              'פסימי',
-            # ── תפוקה שולית ──────────────────────────────────────────────
-            'סה"כ שירותים היסטורי':     'שירותים היסטורי',
-            'תקנים':                    'תקנים',
-            'תפוקה שולית':              'שירותים/תקן',
         }
         _rev_cols_exist = [c for c in _rev_col_map if c in df_rev_all.columns]
         rev_display = df_rev_all[_rev_cols_exist].rename(columns=_rev_col_map)
@@ -755,19 +864,6 @@ def show_report_view(p_name: str, params: dict, prod_map=None):  # noqa: C901
             'נטו לכיס':          st.column_config.NumberColumn(format=_curr_fmt),
             'אופטימי':           st.column_config.NumberColumn(format=_curr_fmt),
             'פסימי':             st.column_config.NumberColumn(format=_curr_fmt),
-            # תפוקה שולית
-            'שירותים היסטורי':   st.column_config.NumberColumn(
-                label="שירותים היסטורי", format="%,.0f",
-                help="סך השירותים שניתנו בכל החודשים הנתונים בקובץ HR",
-            ),
-            'תקנים':             st.column_config.NumberColumn(
-                label="תקנים", format="%.1f",
-                help="סך התקנים (FTE) במחלקה",
-            ),
-            'שירותים/תקן':       st.column_config.NumberColumn(
-                label="שירותים/תקן", format="%.1f",
-                help="תפוקה שולית = שירותים היסטורי ÷ תקנים",
-            ),
         }
         st.dataframe(rev_display, use_container_width=True, hide_index=True,
                      column_config={k: v for k, v in _col_cfg.items() if k in rev_display.columns})
