@@ -256,7 +256,7 @@ def create_qa_review_task(agent, presentation_task: Task) -> Task:
             "  □ Six params: OVERHEAD_RATE, HMO_DISCOUNT, VOL_DISCOUNT, "
             "APPEALS_PROV, NO_SHOW_RATE, CAP_RATE_FACTOR\n"
             "  □ Default values match app.py (ovh=29%, hmo=18.5%, vol=1.9%, "
-            "app=4%, no_show=0%, cap=37.5%)\n\n"
+            "app=4%, no_show=0%, cap=35%)\n\n"
 
             "STEP 3 – Write QA_REVIEW.md with three sections:\n\n"
             "  ## ✅ PASS\n"
@@ -557,7 +557,7 @@ def create_ux_improvement_plan_task(agent) -> Task:
             "expander, data upload expander, and parameters expander. Assess "
             "the hierarchy. Is the parameter section visible enough? Are the "
             "default values (ovh=29%, hmo=18.5%, vol=1.9%, app=4%, "
-            "no_show=0%, cap=37.5%) explained anywhere? Propose improvements "
+            "no_show=0%, cap=35%) explained anywhere? Propose improvements "
             "with tooltips (st.help) or st.info callouts.\n\n"
 
             "  C. EDIT VIEW – PERSISTENT MODEL SUMMARY\n"
