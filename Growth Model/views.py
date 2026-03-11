@@ -506,7 +506,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         st.markdown("**הגדרת ססיות לשירות (אופציונלי - למידע בלבד):**")
         c_sess_v, c_sess_p = st.columns(2)
         c_sess_v.number_input("כמות ססיות נדרשת לשירות זה (שנתי)", 0, 10000, 0, key="srv_sess_vol")
-        c_sess_p.number_input("עלות ססיה", 0, 10000, 0, format="%.0f", key="srv_sess_cost")
+        c_sess_p.number_input("עלות ססיה", 0.0, 10000.0, 0.0, format="%.0f", key="srv_sess_cost")
         st.markdown("**תחזית צמיחה (לעומת שנה קודמת):**")
         col_g2, col_g3, col_g4 = st.columns(3)
         col_g2.number_input("שנה 2 (לעומת שנה 1) %", value=0.0, step=1.0, key="srv_g2")
