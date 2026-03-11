@@ -82,7 +82,7 @@ def _add_formats(wb) -> dict:
     }
 
 
-def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params):
+def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True):
     """Management report: assumption cells at fixed positions, all revenue cells use Excel formulas.
     Clicking any cell reveals the formula so management can trace every calculation."""
     ws = wb.add_worksheet('דוח מנהלים')
@@ -155,14 +155,15 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     ws.merge_range(1, AL, 1, 7,
                    'הנחות החישוב  –  ניתן לשנות ערכים בעמודה F ולראות השפעה על הנוסחאות',
                    fmt['assumption_title'])
-    for ar, label, val in [
-        (HMO_ROW, 'הנחת קופות חולים',  hmo),
+    assumption_rows = [
         (VOL_ROW, 'הנחת מחזור',         vol),
         (APP_ROW, 'הפרשה לערעורים',     appeals),
         (NS_ROW,  'אי-הגעה (No-Show)', no_show_g),
         (OVH_ROW, 'תקורה (Overhead)',   overhead),
-        (CAP_ROW, 'מקדם קאפ (CAP)',     cap_f),
-    ]:
+    ]
+    if include_cap:
+        assumption_rows.append((CAP_ROW, 'מקדם קאפ (CAP)', cap_f))
+    for ar, label, val in assumption_rows:
         ws.write(ar, AL, label, fmt['assumption_box'])
         ws.write(ar, AC, val,   fmt['assump_pct'])
 
@@ -175,11 +176,16 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                        'פירוט הכנסות – לחץ על כל תא כדי לראות את נוסחת החישוב',
                        fmt['mgmt_title_sec'])
         row += 1
-        for i, h in enumerate([
+        _rev_headers = [
             'שם השירות', 'כמות (ביקושים)', 'תעריף ברוטו (₪)',
-            'תעריף נטו (₪)', 'תעריף קאפ (₪)',
-            'סה"כ ברוטו (₪)', 'סה"כ נטו לכיס (₪)', 'סה"כ קאפ (₪)',
-        ]):
+            'תעריף נטו (₪)',
+        ]
+        if include_cap:
+            _rev_headers.append('תעריף קאפ (₪)')
+        _rev_headers += ['סה"כ ברוטו (₪)', 'סה"כ נטו לכיס (₪)']
+        if include_cap:
+            _rev_headers.append('סה"כ קאפ (₪)')
+        for i, h in enumerate(_rev_headers):
             ws.write(row, i, h, fmt['mgmt_header'])
         ws.set_row(row, 28)
         row += 1
@@ -201,20 +207,33 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 ws.write(row, CNT, net_tar, fmt['mgmt_curr'])
             else:
                 ws.write_formula(row, CNT,
-                    f'=C{er}*(1-{hmo_ref})*(1-{vol_ref})*(1-{app_ref})',
+                    f'=C{er}*(1-{vol_ref})*(1-{app_ref})',
                     fmt['mgmt_curr'], net_tar)
-            ws.write_formula(row, CCT,  f'=C{er}*{cap_ref}',                         fmt['mgmt_curr'], cap_tar)
-            ws.write_formula(row, CGT,  f'=B{er}*(1-{ns_ref})*C{er}',                fmt['mgmt_curr'], gross_t)
-            ws.write_formula(row, CNTK, f'=B{er}*(1-{ns_ref})*D{er}*(1-{ovh_ref})', fmt['mgmt_curr'], net_t)
-            ws.write_formula(row, CCTL, f'=B{er}*(1-{ns_ref})*E{er}',                fmt['mgmt_curr'], cap_t)
+            if include_cap:
+                ws.write_formula(row, CCT,  f'=C{er}*{cap_ref}',                         fmt['mgmt_curr'], cap_tar)
+            # Column positions shift when include_cap=False (CCT skipped → CGT/CNTK/CCTL are 4,5,6)
+            _cgt  = CGT  if include_cap else CNT + 1
+            _cntk = CNTK if include_cap else CNT + 2
+            _cctl = CCTL if include_cap else None
+            ws.write_formula(row, _cgt,  f'=B{er}*(1-{ns_ref})*C{er}',                fmt['mgmt_curr'], gross_t)
+            ws.write_formula(row, _cntk, f'=B{er}*(1-{ns_ref})*D{er}*(1-{ovh_ref})', fmt['mgmt_curr'], net_t)
+            if include_cap and _cctl is not None:
+                ws.write_formula(row, _cctl, f'=B{er}*(1-{ns_ref})*E{er}',            fmt['mgmt_curr'], cap_t)
             s_net_t += net_t; s_cap_t += cap_t; row += 1
         data_end_excel = row
         ws.write(row, CN, 'סה"כ', fmt['mgmt_normal_bold'])
-        ws.write_formula(row, CGT,  f'=SUM(F{data_start_excel}:F{data_end_excel})', fmt['mgmt_curr_bold'], df_rev_rows['סה"כ ברוטו'].sum())
-        ws.write_formula(row, CNTK, f'=SUM(G{data_start_excel}:G{data_end_excel})', fmt['mgmt_curr_bold'], s_net_t)
-        ws.write_formula(row, CCTL, f'=SUM(H{data_start_excel}:H{data_end_excel})', fmt['mgmt_curr_bold'], s_cap_t)
-        rev_net_cell = f'G{row + 1}'
-        rev_cap_cell = f'H{row + 1}'
+        _cgt  = CGT  if include_cap else CNT + 1
+        _cntk = CNTK if include_cap else CNT + 2
+        _cctl = CCTL if include_cap else None
+        _cgt_col  = chr(ord('A') + _cgt)
+        _cntk_col = chr(ord('A') + _cntk)
+        ws.write_formula(row, _cgt,  f'=SUM({_cgt_col}{data_start_excel}:{_cgt_col}{data_end_excel})',   fmt['mgmt_curr_bold'], df_rev_rows['סה"כ ברוטו'].sum())
+        ws.write_formula(row, _cntk, f'=SUM({_cntk_col}{data_start_excel}:{_cntk_col}{data_end_excel})', fmt['mgmt_curr_bold'], s_net_t)
+        if include_cap and _cctl is not None:
+            _cctl_col = chr(ord('A') + _cctl)
+            ws.write_formula(row, _cctl, f'=SUM({_cctl_col}{data_start_excel}:{_cctl_col}{data_end_excel})', fmt['mgmt_curr_bold'], s_cap_t)
+        rev_net_cell = f'{_cntk_col}{row + 1}'
+        rev_cap_cell = f'{_cctl_col}{row + 1}' if (include_cap and _cctl is not None) else None
         row += 2
 
     # ---- Manpower -------------------------------------------------------
@@ -323,55 +342,68 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
 
     ws.write(SUMM_HEADER, 0, 'מדד',            fmt['mgmt_header'])
     ws.write(SUMM_HEADER, 1, 'תרחיש נטו (₪)', fmt['mgmt_header'])
-    ws.write(SUMM_HEADER, 2, 'תרחיש קאפ (₪)', fmt['mgmt_header'])
+    if include_cap:
+        ws.write(SUMM_HEADER, 2, 'תרחיש קאפ (₪)', fmt['mgmt_header'])
 
     # Revenue row – formula references revenue detail total
     if rev_net_cell:
         ws.write_formula(SUMM_REV, 1, f'={rev_net_cell}', fmt['mgmt_sum_val'], s_net_t)
-        ws.write_formula(SUMM_REV, 2, f'={rev_cap_cell}', fmt['mgmt_sum_val'], s_cap_t)
+        if include_cap:
+            ws.write_formula(SUMM_REV, 2, f'={rev_cap_cell}', fmt['mgmt_sum_val'], s_cap_t)
     else:
         ws.write(SUMM_REV, 1, 0, fmt['mgmt_sum_val'])
-        ws.write(SUMM_REV, 2, 0, fmt['mgmt_sum_val'])
+        if include_cap:
+            ws.write(SUMM_REV, 2, 0, fmt['mgmt_sum_val'])
 
     # HR row – negate manpower total (total is positive cost)
     if mp_total_cell:
         ws.write_formula(SUMM_HR, 1, f'=-{mp_total_cell}', fmt['mgmt_sum_val'], -s_mp)
-        ws.write_formula(SUMM_HR, 2, f'=-{mp_total_cell}', fmt['mgmt_sum_val'], -s_mp)
+        if include_cap:
+            ws.write_formula(SUMM_HR, 2, f'=-{mp_total_cell}', fmt['mgmt_sum_val'], -s_mp)
     else:
         ws.write(SUMM_HR, 1, 0, fmt['mgmt_sum_val'])
-        ws.write(SUMM_HR, 2, 0, fmt['mgmt_sum_val'])
+        if include_cap:
+            ws.write(SUMM_HR, 2, 0, fmt['mgmt_sum_val'])
 
     # Ops row – ops total is already negative (costs)
     if op_total_cell:
         ws.write_formula(SUMM_OPS, 1, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
-        ws.write_formula(SUMM_OPS, 2, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
+        if include_cap:
+            ws.write_formula(SUMM_OPS, 2, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
     else:
         ws.write(SUMM_OPS, 1, 0, fmt['mgmt_sum_val'])
-        ws.write(SUMM_OPS, 2, 0, fmt['mgmt_sum_val'])
+        if include_cap:
+            ws.write(SUMM_OPS, 2, 0, fmt['mgmt_sum_val'])
 
     # CAPEX row – investments total is already negative (costs)
     if inv_total_cell:
         ws.write_formula(SUMM_CAPEX, 1, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
-        ws.write_formula(SUMM_CAPEX, 2, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
+        if include_cap:
+            ws.write_formula(SUMM_CAPEX, 2, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
     else:
         ws.write(SUMM_CAPEX, 1, 0, fmt['mgmt_sum_val'])
-        ws.write(SUMM_CAPEX, 2, 0, fmt['mgmt_sum_val'])
+        if include_cap:
+            ws.write(SUMM_CAPEX, 2, 0, fmt['mgmt_sum_val'])
 
     # EBITDA = revenue + HR + ops (all three already signed correctly)
     ws.write_formula(SUMM_EBITDA, 1, f'=B{E_REV}+B{E_HR}+B{E_OPS}', fmt['mgmt_profit_val'], prof_b)
-    ws.write_formula(SUMM_EBITDA, 2, f'=C{E_REV}+C{E_HR}+C{E_OPS}', fmt['mgmt_profit_val'], op_profit_cap)
+    if include_cap:
+        ws.write_formula(SUMM_EBITDA, 2, f'=C{E_REV}+C{E_HR}+C{E_OPS}', fmt['mgmt_profit_val'], op_profit_cap)
 
     # Net profit = EBITDA + CAPEX (CAPEX already negative)
     ws.write_formula(SUMM_PROFIT, 1, f'=B{E_EBITDA}+B{E_CAPEX}', fmt['mgmt_profit_val'], total_net_profit)
-    ws.write_formula(SUMM_PROFIT, 2, f'=C{E_EBITDA}+C{E_CAPEX}', fmt['mgmt_profit_val'], total_net_profit_cap)
+    if include_cap:
+        ws.write_formula(SUMM_PROFIT, 2, f'=C{E_EBITDA}+C{E_CAPEX}', fmt['mgmt_profit_val'], total_net_profit_cap)
 
     # ROI = abs(CAPEX) / EBITDA → -CAPEX_cell / EBITDA_cell (CAPEX is negative)
     ws.write_formula(SUMM_ROI, 1, f'=IF(B{E_EBITDA}>0,-B{E_CAPEX}/B{E_EBITDA},0)', fmt['mgmt_sum_val'], roi)
-    ws.write_formula(SUMM_ROI, 2, f'=IF(C{E_EBITDA}>0,-C{E_CAPEX}/C{E_EBITDA},0)', fmt['mgmt_sum_val'], roi_cap)
+    if include_cap:
+        ws.write_formula(SUMM_ROI, 2, f'=IF(C{E_EBITDA}>0,-C{E_CAPEX}/C{E_EBITDA},0)', fmt['mgmt_sum_val'], roi_cap)
 
     # Recommendation = IF formula
     ws.write_formula(SUMM_REC, 1, f'=IF(B{E_PROFIT}>0,"\u2705 \u05de\u05d5\u05de\u05dc\u05e5","\U0001f6d1 \u05dc\u05d0 \u05de\u05d5\u05de\u05dc\u05e5")', fmt['mgmt_sum_val'], rec)
-    ws.write_formula(SUMM_REC, 2, f'=IF(C{E_PROFIT}>0,"\u2705 \u05de\u05d5\u05de\u05dc\u05e5","\U0001f6d1 \u05dc\u05d0 \u05de\u05d5\u05de\u05dc\u05e5")', fmt['mgmt_sum_val'], rec_cap)
+    if include_cap:
+        ws.write_formula(SUMM_REC, 2, f'=IF(C{E_PROFIT}>0,"\u2705 \u05de\u05d5\u05de\u05dc\u05e5","\U0001f6d1 \u05dc\u05d0 \u05de\u05d5\u05de\u05dc\u05e5")', fmt['mgmt_sum_val'], rec_cap)
 
     # Labels for summary rows
     for r_idx, label in [
@@ -396,12 +428,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     ws.set_column('G:H', 18)   # assumption values / revenue totals
 
 
-def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params):
+def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True):
     wb = writer.book
     fmt = _add_formats(wb)
 
     # Create management-friendly sheet first so it appears as the first tab
-    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params)
+    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap)
 
     show_scenarios = not (
         (df_flat['Pct_Opt_Raw'] == 0).all() and (df_flat['Pct_Pess_Raw'] == 0).all()
@@ -426,6 +458,8 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
     }
     r_p = 2
     for k, v in params.items():
+        if k == 'HMO_DISCOUNT':
+            continue   # הוסר — הנחת קופות אינה בשימוש
         ws_meta.write(r_p, 0, hebrew_params.get(k, k), fmt['normal'])
         ws_meta.write(r_p, 1, f"{v * 100:.1f}%", fmt['normal'])
         r_p += 1
@@ -466,7 +500,8 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
     row_idx = 2
     ws.write(row_idx, 1, "מדד / סעיף", fmt['header'])
     ws.write(row_idx, 2, "תרחיש נטו", fmt['header'])
-    ws.write(row_idx, 3, "תרחיש קאפ", fmt['header'])
+    if include_cap:
+        ws.write(row_idx, 3, "תרחיש קאפ", fmt['header'])
     row_idx += 1
 
     summary_rows = [
@@ -481,24 +516,29 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         if show:
             ws.write(row_idx, 1, label, lbl_fmt)
             ws.write(row_idx, 2, val_net, val_fmt)
-            ws.write(row_idx, 3, val_cap, val_fmt)
+            if include_cap:
+                ws.write(row_idx, 3, val_cap, val_fmt)
             row_idx += 1
 
     ws.write(row_idx, 1, "ROI (שנים להחזר)", fmt['sum_label'])
     ws.write(row_idx, 2, f"{roi:.1f}", fmt['sum_val'])
-    ws.write(row_idx, 3, f"{roi_cap:.1f}", fmt['sum_val'])
+    if include_cap:
+        ws.write(row_idx, 3, f"{roi_cap:.1f}", fmt['sum_val'])
     row_idx += 1
     ws.write(row_idx, 1, "המלצה עסקית", fmt['sum_label'])
     ws.write(row_idx, 2, rec, fmt['sum_val'])
-    ws.write(row_idx, 3, rec_cap, fmt['sum_val'])
+    if include_cap:
+        ws.write(row_idx, 3, rec_cap, fmt['sum_val'])
     row_idx += 3
 
     # ---- Revenue detail --------------------------------------------------
     df_rev = df_flat[df_flat['קטגוריה'] == 'Revenue']
     if not df_rev.empty:
-        ws.merge_range(row_idx, 0, row_idx, 4, "פירוט הכנסות - מידע כללי", fmt['title_sec'])
+        info_headers = ["שם השירות", "כמות שנתית", "תעריף ברוטו ליח'", "תעריף נטו ליח'"]
+        if include_cap:
+            info_headers.append("תעריף קאפ ליח'")
+        ws.merge_range(row_idx, 0, row_idx, len(info_headers) - 1, "פירוט הכנסות - מידע כללי", fmt['title_sec'])
         row_idx += 1
-        info_headers = ["שם השירות", "כמות שנתית", "תעריף ברוטו ליח'", "תעריף נטו ליח'", "תעריף קאפ ליח'"]
         for i, h in enumerate(info_headers):
             ws.write(row_idx, i, h, fmt['header'])
         row_idx += 1
@@ -507,12 +547,15 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
             ws.write(row_idx, 1, row['כמות שירותים רגילים'], fmt['normal'])
             ws.write(row_idx, 2, row['תעריף יחידה ברוטו'], fmt['curr'])
             ws.write(row_idx, 3, row['תעריף יחידה אחרי הנחות'], fmt['curr'])
-            ws.write(row_idx, 4, row['תעריף יחידה תחת cap'], fmt['curr'])
+            if include_cap:
+                ws.write(row_idx, 4, row['תעריף יחידה תחת cap'], fmt['curr'])
             row_idx += 1
         row_idx += 1
 
-        rev_headers = [
-            "שם השירות", "סה\"כ הכנסה ברוטו", "סה\"כ הכנסה נטו", "סה\"כ הכנסה בקאפ",
+        rev_headers = ["שם השירות", "סה\"כ הכנסה ברוטו", "סה\"כ הכנסה נטו"]
+        if include_cap:
+            rev_headers.append("סה\"כ הכנסה בקאפ")
+        rev_headers += [
             f"עלות תקורה ({params.get('OVERHEAD_RATE', 0.29) * 100:.0f}%)", "סה\"כ נטו אחרי תקורה",
         ]
         if show_scenarios:
@@ -528,27 +571,34 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
             ws.write(row_idx, 0, row['שם שירות'], fmt['normal'])
             ws.write(row_idx, 1, row['סה"כ ברוטו'], fmt['curr'])
             ws.write(row_idx, 2, row['סה"כ אחרי הנחות'], fmt['curr'])
-            ws.write(row_idx, 3, row['סה"כ אחרי קאפ'], fmt['curr'])
-            ws.write(row_idx, 4, row['עלות תקורה'], fmt['curr'])
-            ws.write(row_idx, 5, row['סה"כ נטו לכיס'], fmt['curr'])
+            _col = 3
+            if include_cap:
+                ws.write(row_idx, _col, row['סה"כ אחרי קאפ'], fmt['curr']); _col += 1
+            ws.write(row_idx, _col, row['עלות תקורה'], fmt['curr']); _col += 1
+            ws.write(row_idx, _col, row['סה"כ נטו לכיס'], fmt['curr']); _col += 1
             s_gross += row['סה"כ ברוטו']
-            s_net += row['סה"כ אחרי הנחות']
-            s_cap += row['סה"כ אחרי קאפ']
-            s_ovh += row['עלות תקורה']
+            s_net   += row['סה"כ אחרי הנחות']
+            s_cap   += row['סה"כ אחרי קאפ']
+            s_ovh   += row['עלות תקורה']
             s_pocket += row['סה"כ נטו לכיס']
             if show_scenarios:
-                ws.write(row_idx, 6, row['תרחיש אופטימי'], fmt['curr'])
-                ws.write(row_idx, 7, row['תרחיש פסימי'], fmt['curr'])
-                s_opt += row['תרחיש אופטימי']
+                ws.write(row_idx, _col, row['תרחיש אופטימי'], fmt['curr']); _col += 1
+                ws.write(row_idx, _col, row['תרחיש פסימי'], fmt['curr'])
+                s_opt  += row['תרחיש אופטימי']
                 s_pess += row['תרחיש פסימי']
             row_idx += 1
 
         ws.write(row_idx, 0, "סה\"כ", fmt['normal_bold'])
-        for col, val in enumerate([s_gross, s_net, s_cap, s_ovh, s_pocket], start=1):
-            ws.write(row_idx, col, val, fmt['curr_bold'])
+        _col = 1
+        for val in [s_gross, s_net]:
+            ws.write(row_idx, _col, val, fmt['curr_bold']); _col += 1
+        if include_cap:
+            ws.write(row_idx, _col, s_cap, fmt['curr_bold']); _col += 1
+        for val in [s_ovh, s_pocket]:
+            ws.write(row_idx, _col, val, fmt['curr_bold']); _col += 1
         if show_scenarios:
-            ws.write(row_idx, 6, s_opt, fmt['curr_bold'])
-            ws.write(row_idx, 7, s_pess, fmt['curr_bold'])
+            ws.write(row_idx, _col, s_opt,  fmt['curr_bold']); _col += 1
+            ws.write(row_idx, _col, s_pess, fmt['curr_bold'])
         row_idx += 2
 
     # ---- Manpower detail -------------------------------------------------

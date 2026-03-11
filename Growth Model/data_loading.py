@@ -151,7 +151,12 @@ def _load_hr_staffing(xls: pd.ExcelFile, msgs: list):
     return df_hr_structure, df_hr_counts
 
 
-def _load_hr_costs(xls: pd.ExcelFile, df_hr_structure: pd.DataFrame, msgs: list) -> pd.DataFrame:
+def _load_hr_costs(
+    xls: pd.ExcelFile,
+    df_hr_structure: pd.DataFrame,
+    df_hr_counts: pd.DataFrame,
+    msgs: list,
+) -> pd.DataFrame:
     try:
         df_costs_raw = pd.read_excel(xls, 'DB_HR_Costs', header=None)
         header_idx = find_true_header_index(df_costs_raw, ['Maarach', 'Job Desc'], threshold=1)
@@ -161,59 +166,112 @@ def _load_hr_costs(xls: pd.ExcelFile, df_hr_structure: pd.DataFrame, msgs: list)
         df = pd.read_excel(xls, 'DB_HR_Costs', header=header_idx)
         df = _rename_hr_columns(df)
 
+        if 'Job Desc' not in df.columns:
+            return df_hr_structure
+
         val_col = next(
             (c for c in df.columns if 'Values' in str(c) or 'ערכים' in str(c)), None
         )
-        if 'Job Desc' not in df.columns or not val_col:
-            return df_hr_structure
-
         idx_cols = [c for c in GROUP_COLS if c in df.columns]
-        month_cols = [c for c in df.columns if c not in idx_cols + ['Category ID', val_col]]
-        for mc in month_cols:
-            df[mc] = pd.to_numeric(df[mc], errors='coerce')
+        df_calculated = None  # set in one of the two branches below
 
-        df = df.dropna(subset=idx_cols, how='all')
-        pivoted = df.pivot_table(index=idx_cols, columns=val_col, values=month_cols, aggfunc='sum')
+        if val_col:
+            # ── OLD FORMAT: Values pivot column (עלות כ״א + עלות משרות) ──────
+            month_cols = [c for c in df.columns if c not in idx_cols + ['Category ID', val_col]]
+            for mc in month_cols:
+                df[mc] = pd.to_numeric(df[mc], errors='coerce')
 
-        cost_key = [k for k in pivoted.columns.get_level_values(1).unique()
-                    if 'סכום' in str(k) or 'שכר' in str(k)
-                    or ('עלות' in str(k) and 'משרות' not in str(k))]
-        emp_key = [k for k in pivoted.columns.get_level_values(1).unique()
-                   if 'עובדים' in str(k) or 'מספר' in str(k) or 'משרות' in str(k)]
+            df = df.dropna(subset=idx_cols, how='all')
+            pivoted = df.pivot_table(index=idx_cols, columns=val_col, values=month_cols, aggfunc='sum')
 
-        if not (cost_key and emp_key):
-            return df_hr_structure
+            cost_key = [k for k in pivoted.columns.get_level_values(1).unique()
+                        if 'סכום' in str(k) or 'שכר' in str(k)
+                        or ('עלות' in str(k) and 'משרות' not in str(k))]
+            emp_key = [k for k in pivoted.columns.get_level_values(1).unique()
+                       if 'עובדים' in str(k) or 'מספר' in str(k) or 'משרות' in str(k)]
 
-        c_k, e_k = cost_key[0], emp_key[0]
+            if not (cost_key and emp_key):
+                return df_hr_structure
 
-        valid_months = [m for m in month_cols
-                        if (m, c_k) in pivoted.columns and (m, e_k) in pivoted.columns]
+            c_k, e_k = cost_key[0], emp_key[0]
+            valid_months = [m for m in month_cols
+                            if (m, c_k) in pivoted.columns and (m, e_k) in pivoted.columns]
 
-        # to_frame() handles both single-level and MultiIndex correctly (fixes BUG 1)
-        df_calculated = pivoted.index.to_frame(index=False)
-        df_calculated.columns = idx_cols
-        df_calculated['Calculated_Monthly_Cost'] = 0.0
+            # to_frame() handles both single-level and MultiIndex correctly
+            df_calculated = pivoted.index.to_frame(index=False)
+            df_calculated.columns = idx_cols
+            df_calculated['Calculated_Monthly_Cost'] = 0.0
 
-        if valid_months:
-            cost_m = pivoted[[(m, c_k) for m in valid_months]].copy()
-            emp_m  = pivoted[[(m, e_k) for m in valid_months]].copy()
-            cost_m.columns = valid_months
-            emp_m.columns  = valid_months
+            if valid_months:
+                cost_m = pivoted[[(m, c_k) for m in valid_months]].copy()
+                emp_m  = pivoted[[(m, e_k) for m in valid_months]].copy()
+                cost_m.columns = valid_months
+                emp_m.columns  = valid_months
 
-            valid_mask = cost_m.notna() & emp_m.notna() & (emp_m > 0)
-            unit_cost  = (cost_m / emp_m).where(valid_mask)
+                valid_mask = cost_m.notna() & emp_m.notna() & (emp_m > 0)
+                unit_cost  = (cost_m / emp_m).where(valid_mask)
 
-            # Take most-recent valid month per row (vectorized, no iterrows)
-            rev_months  = list(reversed(valid_months))
-            valid_rev   = unit_cost[rev_months].notna().to_numpy(dtype=bool)
-            has_valid   = valid_rev.any(axis=1)
-            vals        = unit_cost[rev_months].to_numpy(dtype=float)
-            first_pos   = valid_rev.argmax(axis=1)
-            df_calculated['Calculated_Monthly_Cost'] = np.where(
-                has_valid, vals[np.arange(len(vals)), first_pos], 0.0
+                # Take most-recent valid month per row (vectorized, no iterrows)
+                rev_months = list(reversed(valid_months))
+                valid_rev  = unit_cost[rev_months].notna().to_numpy(dtype=bool)
+                has_valid  = valid_rev.any(axis=1)
+                vals       = unit_cost[rev_months].to_numpy(dtype=float)
+                first_pos  = valid_rev.argmax(axis=1)
+                df_calculated['Calculated_Monthly_Cost'] = np.where(
+                    has_valid, vals[np.arange(len(vals)), first_pos], 0.0
+                )
+
+        else:
+            # ── NEW FORMAT: direct monthly cost columns, Sector rows ──────────
+            # Each row = one dept+job+sector combo; columns = monthly cost values.
+            month_cols = [c for c in df.columns if c not in idx_cols + ['Category ID']]
+            for mc in month_cols:
+                df[mc] = pd.to_numeric(df[mc], errors='coerce')
+
+            df = df.dropna(subset=idx_cols, how='all')
+
+            # Drop exception rows where Sector starts with '-' (e.g. '-9-חר...')
+            if 'Sector' in df.columns:
+                df = df[~df['Sector'].astype(str).str.startswith('-', na=False)]
+
+            # Group by all idx_cols (including Sector) → total monthly cost per group
+            grp = df.groupby(idx_cols)[month_cols].sum()
+            n_months = len(month_cols)
+
+            # Vectorized: most-recent non-zero valid month's total cost per row
+            grp_vals = grp.to_numpy(dtype=float)
+            rev_vals  = grp_vals[:, ::-1]
+            valid_rev = np.isfinite(rev_vals) & (rev_vals > 0)
+            has_valid = valid_rev.any(axis=1)
+            first_pos = valid_rev.argmax(axis=1)
+            latest_total = np.where(
+                has_valid, rev_vals[np.arange(len(rev_vals)), first_pos], 0.0
             )
-        if not df_hr_structure.empty and not df_calculated.empty:
-            df_hr_structure = df_hr_structure.merge(df_calculated, on=idx_cols, how='left')
+
+            df_calculated = grp.reset_index()[idx_cols].copy()
+            df_calculated['_total_cost'] = latest_total
+
+            # Per-employee monthly cost = total_cost / avg_monthly_fte
+            # avg_monthly_fte = Existing_FTE (sum across all months) / n_months
+            if not df_hr_counts.empty and 'Existing_FTE' in df_hr_counts.columns:
+                fte_key = [c for c in idx_cols if c in df_hr_counts.columns]
+                df_calculated = df_calculated.merge(
+                    df_hr_counts[fte_key + ['Existing_FTE']], on=fte_key, how='left'
+                )
+                avg_fte = (
+                    df_calculated['Existing_FTE'].fillna(1) / max(n_months, 1)
+                ).clip(lower=0.1)
+            else:
+                avg_fte = pd.Series(1.0, index=df_calculated.index)
+
+            df_calculated['Calculated_Monthly_Cost'] = df_calculated['_total_cost'] / avg_fte
+
+        # ── Merge calculated costs into df_hr_structure ───────────────────────
+        if df_calculated is not None and not df_hr_structure.empty and not df_calculated.empty:
+            merge_key = [c for c in idx_cols if c in df_hr_structure.columns]
+            df_hr_structure = df_hr_structure.merge(
+                df_calculated[merge_key + ['Calculated_Monthly_Cost']], on=merge_key, how='left'
+            )
             df_hr_structure['Monthly_Cost'] = df_hr_structure['Calculated_Monthly_Cost'].fillna(0)
             df_hr_structure['Annual_Cost'] = df_hr_structure['Monthly_Cost'] * 12
             msgs.append("✅ נטענו תעריפי שכר מדויקים פר-מחלקה (לפי נתוני החודש האחרון הזמין)")
@@ -287,7 +345,7 @@ def load_growth_data(file_internal, file_external_list):
         xls = pd.ExcelFile(file_internal)
 
         df_hr_structure, df_hr_counts = _load_hr_staffing(xls, msgs)
-        df_hr_structure = _load_hr_costs(xls, df_hr_structure, msgs)
+        df_hr_structure = _load_hr_costs(xls, df_hr_structure, df_hr_counts, msgs)
 
         df_hr = df_hr_structure.copy() if not df_hr_structure.empty else pd.DataFrame()
         if 'Annual_Cost' not in df_hr.columns:
@@ -330,16 +388,45 @@ def load_growth_data(file_internal, file_external_list):
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_employee_counts(file_internal) -> pd.DataFrame:
     """
-    טוען ממגיון DB_HR_Costs את ה-Value "מספר עובדים" לכל תפקיד וחודש.
+    טוען ספירת עובדים חודשית לחישוב תפוקה שולית.
 
     מחזיר DataFrame עם עמודות:
         [GROUP_COLS..., 'Total_Employee_Months', 'Avg_Monthly_Employees', 'Months_Count']
 
-    שימוש: מכנה בחישוב תפוקה שולית =
-        סך שירותים (DB_Service_count) / סך חודשי-עובד (DB_HR_Costs)
+    פורמט חדש: קורא מ-DB_HR_Staffing (ערכי FTE חודשיים ישירות, ללא pivot).
+    פורמט ישן: קורא מ-DB_HR_Costs עם עמודת Values (pivot "מספר עובדים").
     """
     try:
         xls = pd.ExcelFile(file_internal)
+
+        # ── NEW FORMAT: DB_HR_Staffing has direct monthly FTE values ─────────
+        if 'DB_HR_Staffing' in xls.sheet_names:
+            try:
+                df_raw = pd.read_excel(xls, 'DB_HR_Staffing', header=None)
+                header_idx = find_true_header_index(df_raw, ['Maarach', 'Job Desc'], threshold=1)
+                if header_idx != -1:
+                    df = pd.read_excel(xls, 'DB_HR_Staffing', header=header_idx)
+                    df = _rename_hr_columns(df)
+
+                    if 'Job Desc' in df.columns:
+                        idx_cols = [c for c in GROUP_COLS if c in df.columns]
+                        month_cols = [c for c in df.columns if c not in idx_cols + ['Category ID']]
+                        for mc in month_cols:
+                            df[mc] = pd.to_numeric(df[mc], errors='coerce')
+                        df = df.dropna(subset=idx_cols, how='all')
+
+                        emp_data = df.groupby(idx_cols)[month_cols].sum().reset_index()
+                        emp_data['Total_Employee_Months'] = emp_data[month_cols].fillna(0).sum(axis=1)
+                        emp_data['Avg_Monthly_Employees'] = emp_data[month_cols].fillna(0).mean(axis=1)
+                        emp_data['Months_Count'] = len(month_cols)
+
+                        result = emp_data[idx_cols + ['Total_Employee_Months', 'Avg_Monthly_Employees', 'Months_Count']]
+                        if not result.empty:
+                            return result
+            except Exception:
+                pass  # fall through to old-format path
+
+        # ── OLD FORMAT: DB_HR_Costs with Values pivot ─────────────────────────
         df_raw = pd.read_excel(xls, 'DB_HR_Costs', header=None)
         header_idx = find_true_header_index(df_raw, ['Maarach', 'Job Desc'], threshold=1)
         if header_idx == -1:
@@ -370,7 +457,6 @@ def load_employee_counts(file_internal) -> pd.DataFrame:
         if not emp_key:
             return pd.DataFrame()
 
-        # מסנן רק את עמודות מספר עובדים
         emp_cols = [c for c in pivoted.columns if c[1] == emp_key]
         if not emp_cols:
             return pd.DataFrame()

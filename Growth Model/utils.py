@@ -76,34 +76,49 @@ def extract_clean_code_from_string(val) -> str | None:
 # ---------------------------------------------------------------------------
 
 def find_true_header_index(df: pd.DataFrame, required_keywords: list, threshold: int = 1) -> int:
-    for i, row in df.head(50).iterrows():
-        row_str = " ".join(row.astype(str).fillna("").values).lower()
-        if sum(1 for kw in required_keywords if kw.lower() in row_str) >= threshold:
-            return i
-    return -1
+    head = df.head(50).fillna("").astype(str)
+    if head.empty or required_keywords == []:
+        return -1
+    row_strings = head.iloc[:, 0].str.lower()
+    for col in head.columns[1:]:
+        row_strings = row_strings + " " + head[col].str.lower()
+    counts = sum(row_strings.str.contains(kw.lower(), regex=False) for kw in required_keywords)
+    matches = counts[counts >= threshold]
+    return int(matches.index[0]) if not matches.empty else -1
 
 
 # ---------------------------------------------------------------------------
 # Session-state data validation
 # ---------------------------------------------------------------------------
 
+_FIELD_NAMES_HEB = {
+    'Quantity':     'כמות / תקנים',
+    'Unit_Cost':    'עלות ליחידה',
+    'Unit_Revenue': 'תעריף',
+    'Pct_Opt':      'אחוז אופטימי',
+    'Pct_Pess':     'אחוז פסימי',
+}
+_COMMON_FIELDS = ['Quantity', 'Pct_Opt', 'Pct_Pess']
+_FIELDS_BY_CATEGORY = {
+    'Revenue':    _COMMON_FIELDS + ['Unit_Revenue'],
+    'Manpower':   _COMMON_FIELDS + ['Unit_Cost'],
+    'Operation':  _COMMON_FIELDS + ['Unit_Cost'],
+    'Investment': _COMMON_FIELDS + ['Unit_Cost'],
+}
+
+
 def check_data_health(growth_items: list) -> HealthIssue:
-    critical_fields = {
-        'Quantity': 'כמות / תקנים',
-        'Unit_Cost': 'עלות ליחידה',
-        'Unit_Revenue': 'תעריף',
-        'Pct_Opt': 'אחוז אופטימי',
-        'Pct_Pess': 'אחוז פסימי',
-    }
     for i, item in enumerate(growth_items):
         name = item.get('Name', 'ללא שם')
-        for field_key, heb_name in critical_fields.items():
+        cat = item.get('Category', '')
+        fields = _FIELDS_BY_CATEGORY.get(cat, _COMMON_FIELDS)
+        for field_key in fields:
             val = item.get(field_key)
             is_missing = val is None or (isinstance(val, float) and np.isnan(val))
             if is_missing:
                 return HealthIssue(
                     has_issue=True,
-                    message=f"בשורה **{i + 1}** ('{name}'), נמחק הערך בעמודה **{heb_name}**.",
+                    message=f"בשורה **{i + 1}** ('{name}'), נמחק הערך בעמודה **{_FIELD_NAMES_HEB[field_key]}**.",
                     row_index=i,
                     field=field_key,
                 )

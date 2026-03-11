@@ -165,14 +165,13 @@ def main():
 
         with st.expander("⚙️ פרמטרים"):
             ovh = st.number_input("תקורה", value=29.0) / 100
-            hmo = st.number_input("הנחת קופות", value=18.5) / 100
             vol = st.number_input("הנחת מחזור", value=1.9) / 100
             app = st.number_input("ערעורים", value=4.0) / 100
             cap = st.number_input("קאפ", value=35.0) / 100
             no_show = st.number_input("No-Show", value=0.0) / 100
             params = {
                 "OVERHEAD_RATE": ovh,
-                "HMO_DISCOUNT": hmo,
+                "HMO_DISCOUNT": 0.0,   # הנחת קופות הוסרה
                 "VOL_DISCOUNT": vol,
                 "APPEALS_PROV": app,
                 "NO_SHOW_RATE": no_show,

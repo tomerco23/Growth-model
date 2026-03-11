@@ -516,7 +516,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         if override_defaults:
             col_ns, col_disc = st.columns(2)
             col_ns.number_input("אחוז No-Show (%)", min_value=-100.0, max_value=100.0, value=params['NO_SHOW_RATE'] * 100, step=1.0, key="srv_ns")
-            combined_discount = (1 - ((1 - params['HMO_DISCOUNT']) * (1 - params['VOL_DISCOUNT']) * (1 - params['APPEALS_PROV']) * (1 - params['NO_SHOW_RATE']))) * 100
+            combined_discount = (1 - ((1 - params['VOL_DISCOUNT']) * (1 - params['APPEALS_PROV']) * (1 - params['NO_SHOW_RATE']))) * 100
             col_disc.number_input("אחוז הנחות כולל (%)", min_value=-100.0, max_value=100.0, value=combined_discount, step=1.0, key="srv_disc")
         st.button("➕ הוסף הכנסה/ות", on_click=add_srv_item, args=(df_srv_prices, params))
 
@@ -964,21 +964,22 @@ def show_report_view(  # noqa: C901
             )
             st.plotly_chart(fig_rev, use_container_width=True)
 
-    # ── H2: NET vs CAP – השוואת תרחיש נטו מול קאפ ─────────────────────────
-    st.subheader("📊 נטו מול קאפ")
-    h2_l, h2_r = st.columns(2)
-    with h2_l:
-        st.markdown("**תרחיש נטו (סטנדרט)**")
-        h2_l.metric("רווח תפעולי", f"₪{format_number_str(profit_b)}")
-        h2_l.metric("ROI", f"{roi:.1f} שנים" if roi > 0 else "—")
-        _rec_net = "✅ מומלץ" if profit_pess > 0 else ("⚠️ מותנה" if profit_b > 0 else "🛑 לא מומלץ")
-        h2_l.info(f"המלצה: **{_rec_net}**")
-    with h2_r:
-        st.markdown("**תרחיש קאפ (תקרה)**")
-        h2_r.metric("רווח תפעולי", f"₪{format_number_str(op_profit_cap)}")
-        h2_r.metric("ROI", f"{roi_cap:.1f} שנים" if roi_cap > 0 else "—")
-        _rec_cap = "✅ מומלץ" if (op_profit_cap - capex) > 0 else "🛑 לא מומלץ"
-        h2_r.info(f"המלצה: **{_rec_cap}**")
+    # ── H2: NET vs CAP – גלוי רק כשהמשתמש מסמן "הצג תרחיש קאפ" ────────────
+    if st.session_state.get('show_cap_report', False):
+        st.subheader("📊 נטו מול קאפ")
+        h2_l, h2_r = st.columns(2)
+        with h2_l:
+            st.markdown("**תרחיש נטו (סטנדרט)**")
+            h2_l.metric("רווח תפעולי", f"₪{format_number_str(profit_b)}")
+            h2_l.metric("ROI", f"{roi:.1f} שנים" if roi > 0 else "—")
+            _rec_net = "✅ מומלץ" if profit_pess > 0 else ("⚠️ מותנה" if profit_b > 0 else "🛑 לא מומלץ")
+            h2_l.info(f"המלצה: **{_rec_net}**")
+        with h2_r:
+            st.markdown("**תרחיש קאפ (תקרה)**")
+            h2_r.metric("רווח תפעולי", f"₪{format_number_str(op_profit_cap)}")
+            h2_r.metric("ROI", f"{roi_cap:.1f} שנים" if roi_cap > 0 else "—")
+            _rec_cap = "✅ מומלץ" if (op_profit_cap - capex) > 0 else "🛑 לא מומלץ"
+            h2_r.info(f"המלצה: **{_rec_cap}**")
 
     st.divider()
 
@@ -1020,6 +1021,12 @@ def show_report_view(  # noqa: C901
         st.text_area("הערות הכלכלן:", key='general_comments')
 
     with c2:
+        include_cap = st.checkbox(
+            "📊 הצג תרחיש קאפ בדו\"ח",
+            value=False,
+            key='show_cap_report',
+            help="סמן כדי לכלול את עמודת תרחיש הקאפ בדו\"ח ובקובץ האקסל",
+        )
         clean_filename = re.sub(r'[\\/*?:"<>|]', "", p_name).strip() or "Project_Report"
         df_safe = df_flat.copy().fillna(0).replace([np.inf, -np.inf], 0)
         excel_data = None
@@ -1030,6 +1037,7 @@ def show_report_view(  # noqa: C901
                 writer, df_safe, p_name, capex, opex, rev, profit_b, profit_pess, roi,
                 "✅ מומלץ" if profit_pess > 0 else "🛑 לא מומלץ",
                 st.session_state.general_comments, params,
+                include_cap=include_cap,
             )
             writer.close()
             buf.seek(0)
