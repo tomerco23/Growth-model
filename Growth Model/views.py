@@ -921,9 +921,14 @@ def show_report_view(  # noqa: C901
         _rev_cols_exist = [c for c in _rev_col_map if c in df_rev_all.columns]
         rev_display = df_rev_all[_rev_cols_exist].rename(columns=_rev_col_map)
 
+        # עיגול למטה (floor) לכל העמודות המספריות
+        _num_cols = rev_display.select_dtypes(include='number').columns
+        rev_display = rev_display.copy()
+        rev_display[_num_cols] = np.floor(rev_display[_num_cols])
+
         _curr_fmt = "₪%,.0f"
         _col_cfg = {
-            'כמות':              st.column_config.NumberColumn(format="%.2f"),
+            'כמות':              st.column_config.NumberColumn(format="%,.0f"),
             'תעריף ברוטו':       st.column_config.NumberColumn(format=_curr_fmt),
             'תעריף נטו':         st.column_config.NumberColumn(format=_curr_fmt),
             'תעריף קאפ':         st.column_config.NumberColumn(format=_curr_fmt),
