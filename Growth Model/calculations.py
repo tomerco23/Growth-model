@@ -176,10 +176,7 @@ def calculate_detailed_rows(items: list, params: dict):
             qty_net = qty * (1 - active_no_show) * (0.93 if item.get('Is_New') else 1.0)
             u_gross = item.get('Unit_Revenue') or 0.0
 
-            global_discount_factor = (
-                (1 - params['VOL_DISCOUNT'])
-                * (1 - params['APPEALS_PROV'])
-            )
+            global_discount_factor = 1 - (params['VOL_DISCOUNT'] + params['APPEALS_PROV'])
             active_discount_factor = (
                 1 - (item.get('Manual_Discount_Pct') / 100.0)
                 if item.get('Manual_Discount_Pct') is not None

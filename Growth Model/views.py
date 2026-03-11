@@ -516,7 +516,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         if override_defaults:
             col_ns, col_disc = st.columns(2)
             col_ns.number_input("אחוז No-Show (%)", min_value=-100.0, max_value=100.0, value=params['NO_SHOW_RATE'] * 100, step=1.0, key="srv_ns")
-            combined_discount = (1 - ((1 - params['VOL_DISCOUNT']) * (1 - params['APPEALS_PROV']) * (1 - params['NO_SHOW_RATE']))) * 100
+            combined_discount = (params['VOL_DISCOUNT'] + params['APPEALS_PROV'] + params['NO_SHOW_RATE']) * 100
             col_disc.number_input("אחוז הנחות כולל (%)", min_value=-100.0, max_value=100.0, value=combined_discount, step=1.0, key="srv_disc")
         st.button("➕ הוסף הכנסה/ות", on_click=add_srv_item, args=(df_srv_prices, params))
 
@@ -538,12 +538,16 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         manpower_mask = editable_df['Category_Heb'] == CAT_MAP[Category.MANPOWER]
         editable_df.loc[manpower_mask, 'עלות לשירות'] = editable_df.loc[manpower_mask, 'עלות לשירות'] / 12
         editable_df.reset_index(drop=True, inplace=True)
+        # Task 7: computed column – session annual cost per line item
+        editable_df['עלות ססיות שנתית'] = (
+            editable_df['כמות שירותי ססיה'] * editable_df['עלות ססיה']
+        )
         st.session_state['latest_df_flat_mapping'] = dict(zip(editable_df.index, editable_df['Item_Index']))
 
         cols_order = [
             'Delete', 'Item_Index', 'Category_Heb', 'שם שירות',
             'כמות שירותים רגילים', 'עלות לשירות', 'כמות שירותי ססיה',
-            'עלות ססיה', 'תעריף יחידה ברוטו', 'Pct_Opt_Raw', 'Pct_Pess_Raw',
+            'עלות ססיה', 'עלות ססיות שנתית', 'תעריף יחידה ברוטו', 'Pct_Opt_Raw', 'Pct_Pess_Raw',
         ]
         if 'Lifespan' in df_flat.columns:
             cols_order.append('Lifespan')
@@ -556,11 +560,12 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                     "Item_Index": st.column_config.Column(disabled=True, width=None),
                     "Category_Heb": st.column_config.Column("קטגוריה", disabled=True),
                     "שם שירות": st.column_config.TextColumn("שם הפריט", width="large"),
-                    "כמות שירותים רגילים": st.column_config.NumberColumn("כמות / FTE", format="%.2f"),
-                    "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%.0f"),
-                    "כמות שירותי ססיה": st.column_config.NumberColumn("כמות ססיה (שנתי)", format="%.0f"),
-                    "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%.0f"),
-                    "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%.0f"),
+                    "כמות שירותים רגילים": st.column_config.NumberColumn("כמות", format="%,.2f"),
+                    "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%,.0f"),
+                    "כמות שירותי ססיה": st.column_config.NumberColumn("ססיות (שנתי)", format="%,.0f"),
+                    "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%,.0f"),
+                    "עלות ססיות שנתית": st.column_config.NumberColumn("עלות ססיות שנ' (₪)", format="%,.0f", disabled=True),
+                    "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%,.0f"),
                     "Pct_Opt_Raw": st.column_config.NumberColumn("אופטימי %", format="%d%%"),
                     "Pct_Pess_Raw": st.column_config.NumberColumn("פסימי %", format="%d%%"),
                     "Lifespan": st.column_config.NumberColumn("שנות חיים", format="%d"),
@@ -828,7 +833,7 @@ def show_report_view(  # noqa: C901
     # ── B: 4 KPI Cards ──────────────────────────────────────────────────────
     col1, col2, col3, col4 = st.columns(4)
     col1.metric(
-        "הכנסות נטו לכיס",
+        "הכנסות נטו",
         f"₪{format_number_str(rev)}",
         delta=f"ברוטו ₪{format_number_str(gross_total)}",
         delta_color="off",
@@ -842,7 +847,7 @@ def show_report_view(  # noqa: C901
     col3.metric(
         "רווח כולל (בניכוי השקעה)",
         f"₪{format_number_str(profit_b - capex)}",
-        delta=f"CAPEX ₪{format_number_str(capex)}",
+        delta=f"השקעה ₪{format_number_str(capex)}",
         delta_color="off",
     )
     _roi_delta = "מצוין (< 3 שנים)" if 0 < roi < 3 else ("גבוה" if roi >= 3 else None)
@@ -904,8 +909,21 @@ def show_report_view(  # noqa: C901
     if not df_rev_all.empty:
         st.subheader("💰 פירוט הכנסות")
 
+        # Task 5: build combined service name+code column (vectorized)
+        _rev_disp = df_rev_all.copy()
+        if 'קוד שירות' in _rev_disp.columns:
+            _has_code = _rev_disp['קוד שירות'].astype(str).str.strip().ne('')
+            _rev_disp['שם_מלא'] = _rev_disp['שם שירות'].copy()
+            _rev_disp.loc[_has_code, 'שם_מלא'] = (
+                _rev_disp.loc[_has_code, 'שם שירות']
+                + ' - '
+                + _rev_disp.loc[_has_code, 'קוד שירות'].astype(str)
+            )
+        else:
+            _rev_disp['שם_מלא'] = _rev_disp['שם שירות']
+
         _rev_col_map = {
-            'שם שירות':                  'שירות',
+            'שם_מלא':                    'שירות',
             'כמות שירותים רגילים':       'כמות',
             'תעריף יחידה ברוטו':         'תעריף ברוטו',
             'תעריף יחידה אחרי הנחות':    'תעריף נטו',
@@ -914,12 +932,12 @@ def show_report_view(  # noqa: C901
             'סה"כ אחרי הנחות':          'סה"כ נטו',
             'סה"כ אחרי קאפ':            'סה"כ קאפ',
             'עלות תקורה':               'תקורה',
-            'סה"כ נטו לכיס':            'נטו לכיס',
+            'סה"כ נטו לכיס':            'נטו',
             'תרחיש אופטימי':            'אופטימי',
             'תרחיש פסימי':              'פסימי',
         }
-        _rev_cols_exist = [c for c in _rev_col_map if c in df_rev_all.columns]
-        rev_display = df_rev_all[_rev_cols_exist].rename(columns=_rev_col_map)
+        _rev_cols_exist = [c for c in _rev_col_map if c in _rev_disp.columns]
+        rev_display = _rev_disp[_rev_cols_exist].rename(columns=_rev_col_map)
 
         # עיגול למטה (floor) לכל העמודות המספריות
         _num_cols = rev_display.select_dtypes(include='number').columns
@@ -936,7 +954,7 @@ def show_report_view(  # noqa: C901
             'סה"כ נטו':          st.column_config.NumberColumn(format=_curr_fmt),
             'סה"כ קאפ':          st.column_config.NumberColumn(format=_curr_fmt),
             'תקורה':             st.column_config.NumberColumn(format=_curr_fmt),
-            'נטו לכיס':          st.column_config.NumberColumn(format=_curr_fmt),
+            'נטו':               st.column_config.NumberColumn(format=_curr_fmt),
             'אופטימי':           st.column_config.NumberColumn(format=_curr_fmt),
             'פסימי':             st.column_config.NumberColumn(format=_curr_fmt),
         }
@@ -953,11 +971,11 @@ def show_report_view(  # noqa: C901
                 orientation='h', marker_color='#5dade2',
             ))
             fig_rev.add_trace(go.Bar(
-                name='נטו לכיס', y=_bar_df['שם שירות'], x=_bar_df['סה"כ נטו לכיס'],
+                name='נטו', y=_bar_df['שם שירות'], x=_bar_df['סה"כ נטו לכיס'],
                 orientation='h', marker_color='#1a8a3c',
             ))
             fig_rev.update_layout(
-                title='הכנסות: ברוטו vs נטו לכיס', barmode='group',
+                title='הכנסות: ברוטו vs נטו', barmode='group',
                 height=max(280, len(df_rev_all) * 55),
                 xaxis_title='₪', yaxis_title='',
                 legend=dict(orientation="h", yanchor="bottom", y=1.02),
@@ -1004,7 +1022,19 @@ def show_report_view(  # noqa: C901
             _exp_cols = ['Category_Heb', 'שם שירות', 'כמות שירותים רגילים',
                          'עלות לשירות', 'סה"כ נטו לכיס', 'תרחיש אופטימי', 'תרחיש פסימי']
             _exp_cols_exist = [c for c in _exp_cols if c in df_exp.columns]
-            st.dataframe(df_exp[_exp_cols_exist], use_container_width=True, hide_index=True)
+            _exp_col_cfg = {
+                'Category_Heb':        st.column_config.Column("קטגוריה"),
+                'שם שירות':            st.column_config.Column("שם"),
+                'כמות שירותים רגילים': st.column_config.NumberColumn("כמות", format="%,.2f"),
+                'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%,.0f"),
+                'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ נטו", format="₪%,.0f"),
+                'תרחיש אופטימי':       st.column_config.NumberColumn("אופטימי", format="₪%,.0f"),
+                'תרחיש פסימי':         st.column_config.NumberColumn("פסימי", format="₪%,.0f"),
+            }
+            st.dataframe(
+                df_exp[_exp_cols_exist], use_container_width=True, hide_index=True,
+                column_config={k: v for k, v in _exp_col_cfg.items() if k in _exp_cols_exist},
+            )
 
     # ── השקעות ─────────────────────────────────────────────────────────────
     df_inv = df_flat[df_flat['סוג'] == 'השקעה חד-פעמית']
@@ -1012,13 +1042,28 @@ def show_report_view(  # noqa: C901
         st.subheader("🏗️ השקעות (CAPEX)")
         _inv_cols = ['שם שירות', 'כמות שירותים רגילים', 'עלות לשירות', 'Lifespan', 'סה"כ נטו לכיס']
         _inv_cols_exist = [c for c in _inv_cols if c in df_inv.columns]
-        st.dataframe(df_inv[_inv_cols_exist], use_container_width=True, hide_index=True)
+        _inv_col_cfg = {
+            'שם שירות':            st.column_config.Column("שם ההשקעה"),
+            'כמות שירותים רגילים': st.column_config.NumberColumn("כמות", format="%,.0f"),
+            'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%,.0f"),
+            'Lifespan':            st.column_config.NumberColumn("שנות חיים", format="%d"),
+            'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ", format="₪%,.0f"),
+        }
+        st.dataframe(
+            df_inv[_inv_cols_exist], use_container_width=True, hide_index=True,
+            column_config={k: v for k, v in _inv_col_cfg.items() if k in _inv_cols_exist},
+        )
 
     # ── הערות + ייצוא Excel ─────────────────────────────────────────────────
     st.divider()
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.text_area("הערות הכלכלן:", key='general_comments')
+        st.text_area(
+            "הערות הכלכלן:",
+            key='general_comments',
+            height=180,
+            placeholder="הזן כאן הערות, הנחות יסוד, מגבלות, המלצות לממשל... הערות אלה יופיעו בדוח האקסל.",
+        )
 
     with c2:
         include_cap = st.checkbox(

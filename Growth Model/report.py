@@ -11,7 +11,7 @@ def generate_methodology() -> pd.DataFrame:
     data = [
         ("כמות שירותים נחזית", "הערכה שנתית של היקף הפעילות (זימונים)."),
         ("תקנים (FTE)", "משרה מלאה (Full Time Equivalent). 1.0 = משרה מלאה, 0.5 = חצי משרה."),
-        ("חישוב הכנסה נטו (Net)", "הנוסחה: מחיר מחירון (ברוטו) * (1 - הנחת קופות) * (1 - הנחת מחזור) * (1 - הפרשה לערעורים)."),
+        ("חישוב הכנסה נטו", "הנוסחה: מחיר מחירון (ברוטו) × (1 − (הנחת מחזור + הפרשה לערעורים))."),
         ("חישוב הכנסה קאפ (CAP)", "הנוסחה: מחיר מחירון (ברוטו) * מקדם קאפ (תעריף שולי). ללא הנחות נוספות."),
         ("ניצולת (Utilization)", "מדד רגישות המייצג את היקף המימוש בפועל לעומת התכנון."),
         ("No Show", "שיעור המטופלים שקבעו תור אך לא הגיעו."),
@@ -200,14 +200,16 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             net_t   = r['סה"כ נטו לכיס']
             cap_t   = r['סה"כ אחרי קאפ']
             is_private = gross > 0 and hmo > 0 and abs(gross - net_tar) / gross < 0.001
-            ws.write(row, CN, r['שם שירות'], fmt['mgmt_normal'])
-            ws.write(row, CQ, qty,            fmt['mgmt_normal'])
+            _svc_code = str(r.get('קוד שירות', '')).strip()
+            _svc_display = f"{r['שם שירות']} - {_svc_code}" if _svc_code else r['שם שירות']
+            ws.write(row, CN, _svc_display, fmt['mgmt_normal'])
+            ws.write(row, CQ, qty,           fmt['mgmt_normal'])
             ws.write(row, CG, gross,           fmt['mgmt_curr'])
             if is_private:
                 ws.write(row, CNT, net_tar, fmt['mgmt_curr'])
             else:
                 ws.write_formula(row, CNT,
-                    f'=C{er}*(1-{vol_ref})*(1-{app_ref})',
+                    f'=C{er}*(1-({vol_ref}+{app_ref}))',
                     fmt['mgmt_curr'], net_tar)
             if include_cap:
                 ws.write_formula(row, CCT,  f'=C{er}*{cap_ref}',                         fmt['mgmt_curr'], cap_tar)
@@ -250,17 +252,25 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         for _, r in df_mp_std.iterrows():
             annual_salary = abs(r['סה"כ נטו לכיס'])
             sess_qty   = r['כמות שירותי ססיה']
-            sess_total = sess_qty * r['עלות ססיה']
+            sess_cost_unit = r['עלות ססיה']
+            sess_total = sess_qty * sess_cost_unit
+            fte_count  = max(float(r['כמות שירותים רגילים']), 1)
             if annual_salary == 0 and sess_total > 0:
                 total_cost   = sess_total
-                name_display = r['שם שירות'] + ' ⚠️ (ססיות בלבד)'
-                col2_val, col2_fmt = sess_qty, fmt['mgmt_normal']
+                name_display = r['שם שירות'] + ' (ססיות בלבד)'
+                col2_val, col2_fmt = f'{sess_cost_unit:,.0f} × {int(sess_qty)} ססיות', fmt['mgmt_normal']
             else:
                 total_cost   = annual_salary + sess_total
                 name_display = r['שם שירות']
                 unit_cost    = r['עלות לשירות']
-                col2_val     = unit_cost if unit_cost != 0 else ''
-                col2_fmt     = fmt['mgmt_curr'] if unit_cost != 0 else fmt['mgmt_normal']
+                # Task 7: show session cost per FTE when sessions exist
+                if sess_total > 0 and unit_cost > 0:
+                    sess_per_fte = sess_total / fte_count
+                    col2_val = f'שכר: {unit_cost:,.0f} + ססיות: {sess_per_fte:,.0f}'
+                    col2_fmt = fmt['mgmt_normal']
+                else:
+                    col2_val = unit_cost if unit_cost != 0 else ''
+                    col2_fmt = fmt['mgmt_curr'] if unit_cost != 0 else fmt['mgmt_normal']
             ws.write(row, 0, name_display,               fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'],  fmt['mgmt_normal'])
             ws.write(row, 2, col2_val,                   col2_fmt)
@@ -327,9 +337,11 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
 
     # ---- Comments -------------------------------------------------------
     if comments:
-        ws.write(row, 0, 'הערות נוספות', fmt['mgmt_header'])
+        ws.write(row, 0, 'הערות הכלכלן', fmt['mgmt_header'])
         row += 1
-        ws.merge_range(row, 0, row + 3, 7, comments, fmt['text_box'])
+        for _r in range(row, row + 8):
+            ws.set_row(_r, 20)
+        ws.merge_range(row, 0, row + 7, 7, comments, fmt['text_box'])
 
     # ---- Summary table (written last – formulas reference detail totals) -
     # Fixed Excel 1-based row numbers derived from SUMM_* constants
@@ -543,7 +555,9 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
             ws.write(row_idx, i, h, fmt['header'])
         row_idx += 1
         for _, row in df_rev.iterrows():
-            ws.write(row_idx, 0, row['שם שירות'], fmt['normal'])
+            _code = str(row.get('קוד שירות', '')).strip()
+            _svc_lbl = f"{row['שם שירות']} - {_code}" if _code else row['שם שירות']
+            ws.write(row_idx, 0, _svc_lbl, fmt['normal'])
             ws.write(row_idx, 1, row['כמות שירותים רגילים'], fmt['normal'])
             ws.write(row_idx, 2, row['תעריף יחידה ברוטו'], fmt['curr'])
             ws.write(row_idx, 3, row['תעריף יחידה אחרי הנחות'], fmt['curr'])
@@ -568,7 +582,9 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
 
         s_gross = s_net = s_cap = s_ovh = s_pocket = s_opt = s_pess = 0
         for _, row in df_rev.iterrows():
-            ws.write(row_idx, 0, row['שם שירות'], fmt['normal'])
+            _code2 = str(row.get('קוד שירות', '')).strip()
+            _svc_lbl2 = f"{row['שם שירות']} - {_code2}" if _code2 else row['שם שירות']
+            ws.write(row_idx, 0, _svc_lbl2, fmt['normal'])
             ws.write(row_idx, 1, row['סה"כ ברוטו'], fmt['curr'])
             ws.write(row_idx, 2, row['סה"כ אחרי הנחות'], fmt['curr'])
             _col = 3
@@ -748,9 +764,11 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
 
     row_idx += 3
     if comments:
-        ws.write(row_idx, 0, "הערות נוספות", fmt['header'])
+        ws.write(row_idx, 0, "הערות הכלכלן", fmt['header'])
         row_idx += 1
-        ws.merge_range(row_idx, 0, row_idx + 4, 4, comments, fmt['text_box'])
+        for _r in range(row_idx, row_idx + 8):
+            ws.set_row(_r, 20)
+        ws.merge_range(row_idx, 0, row_idx + 7, 7, comments, fmt['text_box'])
 
     ws.set_column('A:A', 35)
     ws.set_column('B:K', 18)
