@@ -594,16 +594,18 @@ def show_marginal_productivity_tool(h_srv: pd.DataFrame, df_emp_counts: pd.DataF
     """
     כלי חיזוי תפוקה שולית אינטראקטיבי.
 
-    המשתמש בוחר שירות (מונה) + סוג עובד (מכנה).
-    המערכת מחשבת תפוקה שולית היסטורית וחיזוי לגיוס.
+    המשתמש בוחר שירות (מונה) + תקן (מחלקה + תפקיד) (מכנה).
+    המערכת מסננת תקנים למחלקות שמספקות את השירות הנבחר,
+    מחשבת תפוקה שולית היסטורית וחיזוי לגיוס.
     """
     if h_srv is None or h_srv.empty or df_emp_counts is None or df_emp_counts.empty:
         st.info("⚠️ נדרשים נתוני DB_Service_count ו-DB_HR_Costs בקובץ HR כדי להפעיל כלי זה.")
         return
 
     st.markdown(
-        "בחר **שירות** (מונה) ו**סוג עובד** (מכנה) – "
-        "המערכת תחשב תפוקה שולית היסטורית ותחזית לגיוס עובדים."
+        "בחר **שירות** (מונה) ו**תקן** (מכנה) – "
+        "המערכת מסננת את התקנים למחלקות שמספקות את השירות הנבחר "
+        "ומחשבת תפוקה שולית היסטורית ותחזית לגיוס עובדים."
     )
 
     col_a, col_b = st.columns(2)
@@ -622,32 +624,81 @@ def show_marginal_productivity_tool(h_srv: pd.DataFrame, df_emp_counts: pd.DataF
             key="mp_tool_service", label_visibility="collapsed",
         )
 
-    # ── שלב 2: בחירת סוג עובד ─────────────────────────────────────────────
+    # ── הסקת מחלקות הקשורות לשירות הנבחר ────────────────────────────────
+    dept_cols_srv = [c for c in ['Maarach', 'Agaf', 'Hativa', 'Machleket Em', 'Yahida']
+                     if c in h_srv.columns]
+    dept_cols_emp = [c for c in dept_cols_srv if c in df_emp_counts.columns]
+
+    svc_depts = pd.DataFrame()
+    if dept_cols_srv and sel_svc:
+        svc_depts = (
+            h_srv[h_srv['Original_Label'] == sel_svc][dept_cols_srv]
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+
+    if not svc_depts.empty and dept_cols_emp:
+        emp_for_svc = df_emp_counts.merge(svc_depts[dept_cols_emp], on=dept_cols_emp, how='inner')
+    else:
+        emp_for_svc = df_emp_counts.copy()
+
+    if emp_for_svc.empty:
+        emp_for_svc = df_emp_counts.copy()
+
+    # ── שלב 2: בחירת תקן (מחלקה + תפקיד) ─────────────────────────────────
     with col_b:
-        st.markdown("**שלב 2 – סוג עובד**")
-        if 'Job Desc' not in df_emp_counts.columns:
+        st.markdown("**שלב 2 – תקן (מחלקה + תפקיד)**")
+        if 'Job Desc' not in emp_for_svc.columns:
             st.warning("לא נמצאה עמודת 'Job Desc' בנתוני העובדים.")
             return
-        job_opts = sorted(
-            df_emp_counts['Job Desc'].dropna().astype(str).unique().tolist()
+
+        dept_label_col = next(
+            (c for c in ['Machleket Em', 'Yahida', 'Agaf', 'Maarach'] if c in emp_for_svc.columns),
+            None,
         )
-        sel_job = st.selectbox(
-            "סוג עובד", job_opts,
+        emp_for_svc = emp_for_svc.copy()
+        if dept_label_col:
+            emp_for_svc['_teken_label'] = (
+                emp_for_svc[dept_label_col].astype(str).str.strip()
+                + " – "
+                + emp_for_svc['Job Desc'].astype(str).str.strip()
+            )
+        else:
+            emp_for_svc['_teken_label'] = emp_for_svc['Job Desc'].astype(str).str.strip()
+
+        teken_opts = sorted(emp_for_svc['_teken_label'].dropna().unique().tolist())
+        if not teken_opts:
+            st.warning("לא נמצאו תקנים תואמים לשירות שנבחר.")
+            return
+
+        sel_teken = st.selectbox(
+            "תקן", teken_opts,
             key="mp_tool_job", label_visibility="collapsed",
         )
 
-    if not sel_svc or not sel_job:
+    if not sel_svc or not sel_teken:
         return
 
     # ── חישוב היסטורי ─────────────────────────────────────────────────────
-    # מונה: סך שירותים לשירות הנבחר (כל החודשים)
-    srv_rows = h_srv[h_srv['Original_Label'] == sel_svc]
+    # שורות עובדים לתקן הנבחר
+    emp_rows = emp_for_svc[emp_for_svc['_teken_label'] == sel_teken]
+
+    # מונה: סך שירותים – מסונן לאותן מחלקות כמו התקן הנבחר
+    if not emp_rows.empty and dept_cols_emp:
+        emp_dept_vals = emp_rows[dept_cols_emp].drop_duplicates()
+        srv_rows = h_srv[h_srv['Original_Label'] == sel_svc].merge(
+            emp_dept_vals, on=dept_cols_emp, how='inner'
+        )
+        if srv_rows.empty:   # fallback if join yields nothing
+            srv_rows = h_srv[h_srv['Original_Label'] == sel_svc]
+    else:
+        srv_rows = h_srv[h_srv['Original_Label'] == sel_svc]
+
     total_services = float(
         pd.to_numeric(srv_rows['Value'], errors='coerce').fillna(0).sum()
     )
 
-    # מכנה: סך חודשי-עובד לסוג העובד שנבחר
-    emp_rows = df_emp_counts[df_emp_counts['Job Desc'] == sel_job]
+    # מכנה: סך חודשי-עובד לתקן שנבחר
     total_emp_months = float(emp_rows['Total_Employee_Months'].sum()) if not emp_rows.empty else 0.0
     avg_monthly_emp  = float(emp_rows['Avg_Monthly_Employees'].sum()) if not emp_rows.empty else 0.0
     months_count     = int(emp_rows['Months_Count'].iloc[0])          if not emp_rows.empty else 0
@@ -663,7 +714,7 @@ def show_marginal_productivity_tool(h_srv: pd.DataFrame, df_emp_counts: pd.DataF
         f"{total_services:,.0f}",
     )
     m2.metric(
-        "חודשי-עובד (סוג זה)",
+        "חודשי-עובד (תקן זה)",
         f"{total_emp_months:,.1f}",
         help=f"ממוצע {avg_monthly_emp:,.1f} עובד/ים × {months_count} חודשים",
     )
@@ -702,7 +753,7 @@ def show_marginal_productivity_tool(h_srv: pd.DataFrame, df_emp_counts: pd.DataF
     else:
         st.warning(
             "⚠️ לא ניתן לחשב תחזית – "
-            "לא נמצאו חודשי-עובד לסוג שנבחר בנתוני DB_HR_Costs."
+            "לא נמצאו חודשי-עובד לתקן שנבחר בנתוני DB_HR_Costs."
         )
 
 

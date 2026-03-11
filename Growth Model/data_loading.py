@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -27,12 +28,7 @@ def parse_moh_file(uploaded_file):
         else:
             df_raw = pd.read_excel(uploaded_file, header=None, dtype=str)
 
-        header_idx = -1
-        for i, row in df_raw.head(50).iterrows():
-            row_str = str(row.values)
-            if "קוד" in row_str and "שירות" in row_str and "תעריף" in row_str:
-                header_idx = i
-                break
+        header_idx = find_true_header_index(df_raw, ["קוד", "שירות", "תעריף"], threshold=3)
 
         if header_idx != -1:
             uploaded_file.seek(0)
@@ -179,27 +175,43 @@ def _load_hr_costs(xls: pd.ExcelFile, df_hr_structure: pd.DataFrame, msgs: list)
         df = df.dropna(subset=idx_cols, how='all')
         pivoted = df.pivot_table(index=idx_cols, columns=val_col, values=month_cols, aggfunc='sum')
 
-        cost_key = [k for k in pivoted.columns.get_level_values(1).unique() if 'סכום' in str(k) or 'שכר' in str(k)]
-        emp_key = [k for k in pivoted.columns.get_level_values(1).unique() if 'עובדים' in str(k) or 'מספר' in str(k)]
+        cost_key = [k for k in pivoted.columns.get_level_values(1).unique()
+                    if 'סכום' in str(k) or 'שכר' in str(k)
+                    or ('עלות' in str(k) and 'משרות' not in str(k))]
+        emp_key = [k for k in pivoted.columns.get_level_values(1).unique()
+                   if 'עובדים' in str(k) or 'מספר' in str(k) or 'משרות' in str(k)]
 
         if not (cost_key and emp_key):
             return df_hr_structure
 
         c_k, e_k = cost_key[0], emp_key[0]
-        calculated_costs_list = []
-        for idx, row in pivoted.iterrows():
-            found_cost = 0.0
-            for month in reversed(month_cols):
-                if (month, c_k) in row.index and (month, e_k) in row.index:
-                    cost_val, emp_val = row[(month, c_k)], row[(month, e_k)]
-                    if pd.notna(cost_val) and pd.notna(emp_val) and emp_val > 0:
-                        found_cost = float(cost_val) / float(emp_val)
-                        break
-            record = {idx_cols[i]: idx[i] for i in range(len(idx_cols))}
-            record['Calculated_Monthly_Cost'] = found_cost
-            calculated_costs_list.append(record)
 
-        df_calculated = pd.DataFrame(calculated_costs_list)
+        valid_months = [m for m in month_cols
+                        if (m, c_k) in pivoted.columns and (m, e_k) in pivoted.columns]
+
+        # to_frame() handles both single-level and MultiIndex correctly (fixes BUG 1)
+        df_calculated = pivoted.index.to_frame(index=False)
+        df_calculated.columns = idx_cols
+        df_calculated['Calculated_Monthly_Cost'] = 0.0
+
+        if valid_months:
+            cost_m = pivoted[[(m, c_k) for m in valid_months]].copy()
+            emp_m  = pivoted[[(m, e_k) for m in valid_months]].copy()
+            cost_m.columns = valid_months
+            emp_m.columns  = valid_months
+
+            valid_mask = cost_m.notna() & emp_m.notna() & (emp_m > 0)
+            unit_cost  = (cost_m / emp_m).where(valid_mask)
+
+            # Take most-recent valid month per row (vectorized, no iterrows)
+            rev_months  = list(reversed(valid_months))
+            valid_rev   = unit_cost[rev_months].notna().to_numpy(dtype=bool)
+            has_valid   = valid_rev.any(axis=1)
+            vals        = unit_cost[rev_months].to_numpy(dtype=float)
+            first_pos   = valid_rev.argmax(axis=1)
+            df_calculated['Calculated_Monthly_Cost'] = np.where(
+                has_valid, vals[np.arange(len(vals)), first_pos], 0.0
+            )
         if not df_hr_structure.empty and not df_calculated.empty:
             df_hr_structure = df_hr_structure.merge(df_calculated, on=idx_cols, how='left')
             df_hr_structure['Monthly_Cost'] = df_hr_structure['Calculated_Monthly_Cost'].fillna(0)
@@ -248,8 +260,12 @@ def _load_service_hierarchy(xls: pd.ExcelFile, msgs: list):
             c for c in df.columns
             if c not in existing_cols and 'Unnamed' not in str(c)
         ]
+        dept_id_vars = [
+            c for c in ['Maarach', 'Agaf', 'Hativa', 'Machleket Em', 'Yahida', 'Original_Label']
+            if c in df.columns
+        ]
         h_srv = df.melt(
-            id_vars=['Original_Label'],
+            id_vars=dept_id_vars,
             value_vars=value_vars,
             var_name='Date',
             value_name='Value',
@@ -308,56 +324,73 @@ def load_growth_data(file_internal, file_external_list):
 
 
 # ---------------------------------------------------------------------------
-# Marginal-productivity helper (תפוקה שולית)
+# Employee-count loader  (מספר עובדים מ-DB_HR_Costs)
 # ---------------------------------------------------------------------------
 
-def build_marginal_productivity_map(h_srv: pd.DataFrame, h_hr: pd.DataFrame) -> dict:
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_employee_counts(file_internal) -> pd.DataFrame:
     """
-    מחשב תפוקה שולית של עובד ביחס לשירות מסוים.
+    טוען ממגיון DB_HR_Costs את ה-Value "מספר עובדים" לכל תפקיד וחודש.
 
-    נוסחה:
-        תפוקה שולית = סך שירותים (כל החודשים) / סך תקנים
+    מחזיר DataFrame עם עמודות:
+        [GROUP_COLS..., 'Total_Employee_Months', 'Avg_Monthly_Employees', 'Months_Count']
 
-    מקורות:
-        h_srv  – נתוני DB_Service_count לאחר melt: עמודות [Original_Label, Date, Value]
-        h_hr   – df_hr_counts מ-DB_HR_Staffing:    עמודות [GROUP_COLS..., Existing_FTE]
-
-    מחזיר:
-        dict  {normalized_service_code:
-                  {'total_services': float,
-                   'total_fte':      float,
-                   'productivity':   float}}
+    שימוש: מכנה בחישוב תפוקה שולית =
+        סך שירותים (DB_Service_count) / סך חודשי-עובד (DB_HR_Costs)
     """
-    result = {}
+    try:
+        xls = pd.ExcelFile(file_internal)
+        df_raw = pd.read_excel(xls, 'DB_HR_Costs', header=None)
+        header_idx = find_true_header_index(df_raw, ['Maarach', 'Job Desc'], threshold=1)
+        if header_idx == -1:
+            return pd.DataFrame()
 
-    # ── מכנה: סך התקנים ──────────────────────────────────────────────────
-    total_fte = 0.0
-    if h_hr is not None and not h_hr.empty and 'Existing_FTE' in h_hr.columns:
-        total_fte = float(
-            pd.to_numeric(h_hr['Existing_FTE'], errors='coerce').fillna(0).sum()
+        df = pd.read_excel(xls, 'DB_HR_Costs', header=header_idx)
+        df = _rename_hr_columns(df)
+
+        val_col = next(
+            (c for c in df.columns if 'Values' in str(c) or 'ערכים' in str(c)), None
         )
+        if 'Job Desc' not in df.columns or not val_col:
+            return pd.DataFrame()
 
-    # ── מונה: סך שירותים לכל קוד שירות ──────────────────────────────────
-    if h_srv is None or h_srv.empty or 'Original_Label' not in h_srv.columns:
-        return result
+        idx_cols = [c for c in GROUP_COLS if c in df.columns]
+        month_cols = [c for c in df.columns if c not in idx_cols + ['Category ID', val_col]]
+        for mc in month_cols:
+            df[mc] = pd.to_numeric(df[mc], errors='coerce')
 
-    h = h_srv.copy()
-    h['_Code'] = h['Original_Label'].apply(extract_clean_code_from_string)
-    h['_Value'] = pd.to_numeric(
-        h['Value'] if 'Value' in h.columns else 0,
-        errors='coerce',
-    ).fillna(0)
+        df = df.dropna(subset=idx_cols, how='all')
+        pivoted = df.pivot_table(index=idx_cols, columns=val_col, values=month_cols, aggfunc='sum')
 
-    valid = h[h['_Code'].notna() & (h['_Code'] != '')]
-    for code, grp in valid.groupby('_Code'):
-        code_str = str(code).strip()
-        if not code_str:
-            continue
-        total_srv = float(grp['_Value'].sum())
-        result[code_str] = {
-            'total_services': total_srv,
-            'total_fte':      total_fte,
-            'productivity':   round(total_srv / total_fte, 2) if total_fte > 0 else 0.0,
-        }
+        # מחפש את מפתח "מספר עובדים" / "עלות משרות"
+        emp_key = next(
+            (k for k in pivoted.columns.get_level_values(1).unique()
+             if 'עובדים' in str(k) or 'מספר' in str(k) or 'משרות' in str(k)), None
+        )
+        if not emp_key:
+            return pd.DataFrame()
 
-    return result
+        # מסנן רק את עמודות מספר עובדים
+        emp_cols = [c for c in pivoted.columns if c[1] == emp_key]
+        if not emp_cols:
+            return pd.DataFrame()
+
+        emp_data = pivoted[emp_cols].copy()
+        emp_data.columns = [m for m, _ in emp_cols]   # flatten → שמות חודשים בלבד
+        emp_data = emp_data.reset_index()
+
+        month_names = [m for m, _ in emp_cols]
+        emp_data['Total_Employee_Months'] = (
+            emp_data[month_names].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
+        )
+        emp_data['Avg_Monthly_Employees'] = (
+            emp_data[month_names].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+        )
+        emp_data['Months_Count'] = len(month_names)
+
+        return emp_data[idx_cols + ['Total_Employee_Months', 'Avg_Monthly_Employees', 'Months_Count']]
+
+    except Exception:
+        return pd.DataFrame()
+
+
