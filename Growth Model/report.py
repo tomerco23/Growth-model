@@ -342,12 +342,21 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 2
 
     # ---- Comments -------------------------------------------------------
+    # Use a floating text-box so the economist can edit the note directly
+    # in Excel without re-downloading the report from the app.
     if comments:
         ws.write(row, 0, 'הערות הכלכלן', fmt['mgmt_header'])
         row += 1
-        for _r in range(row, row + 8):
-            ws.set_row(_r, 20)
-        ws.merge_range(row, 0, row + 7, 5, comments, fmt['text_box'])
+        for _r in range(row, row + 10):
+            ws.set_row(_r, 18)
+        ws.insert_textbox(row, 0, comments, {
+            'width':          620,
+            'height':         180,
+            'font':           {'name': 'Arial', 'size': 11},
+            'align':          {'vertical': 'top', 'horizontal': 'right'},
+            'object_position': 1,   # move but don't size with cells
+        })
+        row += 10
 
     # ---- Compute Python fallback values for summary ---------------------
     prof_b_new           = s_net_t - s_mp + s_op   # s_op is already negative
