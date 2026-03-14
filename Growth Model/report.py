@@ -289,10 +289,11 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 sp_v = ''
 
             ws.write(row, 0, r['שם שירות'],            fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_curr'])
             if C_ANN is not None:
                 ws.write(row, C_ANN, ann_v, ann_f)
-            ws.write(row, C_SQ, sq_v, fmt['mgmt_normal'])
+            ws.write(row, C_SQ, sq_v,
+                     fmt['mgmt_curr'] if sq_v != '' else fmt['mgmt_normal'])
             ws.write(row, C_SP, sp_v,
                      fmt['mgmt_curr'] if sp_v != '' else fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, mp_formula, fmt['mgmt_curr'], total_cost)
@@ -305,7 +306,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             sh_unit_v = sh_unit if sh_unit != 0 else ''
             sh_unit_f = fmt['mgmt_curr'] if sh_unit != 0 else fmt['mgmt_normal']
             ws.write(row, 0, r['שם שירות'],            fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_curr'])
             ws.write(row, 2, sh_unit_v,                 sh_unit_f)   # unit cost always in col C
             if C_SQ > 2:   # 6-col: write blanks for D and E
                 ws.write(row, C_SQ, '', fmt['mgmt_normal'])
@@ -342,7 +343,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, op_unit if op_unit != 0 else '',
                      fmt['mgmt_curr'] if op_unit != 0 else fmt['mgmt_normal'])
-            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
+            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_curr'])
             ws.write_formula(row, 3, f'=-B{er}*C{er}',      fmt['mgmt_curr'], op_tot)
             s_op += op_tot; row += 1
         op_last_data_excel = row
@@ -367,8 +368,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, inv_unit if inv_unit != 0 else '',
                      fmt['mgmt_curr'] if inv_unit != 0 else fmt['mgmt_normal'])
-            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
-            ws.write(row, 3, r.get('Lifespan', 10),         fmt['mgmt_normal'])
+            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_curr'])
+            ws.write(row, 3, r.get('Lifespan', 10),         fmt['mgmt_curr'])
             ws.write_formula(row, 4, f'=-B{er}*C{er}',      fmt['mgmt_curr'], inv_tot)
             si += inv_tot; row += 1
         inv_last_data_excel = row
