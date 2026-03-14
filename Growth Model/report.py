@@ -356,11 +356,15 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         for _r in range(row, row + 10):
             ws.set_row(_r, 18)
+        # Auto-detect direction: RTL for Hebrew text, LTR for English
+        _rtl = any('\u0590' <= c <= '\u05FF' for c in comments)
         ws.insert_textbox(row, 0, comments, {
-            'width':          620,
-            'height':         180,
-            'font':           {'name': 'Arial', 'size': 11},
-            'align':          {'vertical': 'top', 'horizontal': 'right'},
+            'width':           620,
+            'height':          180,
+            'font':            {'name': 'Arial', 'size': 11},
+            'align':           {'vertical': 'top',
+                                'horizontal': 'right' if _rtl else 'left'},
+            'text_direction':  'rtl' if _rtl else 'ltr',
             'object_position': 1,   # move but don't size with cells
         })
         row += 10
