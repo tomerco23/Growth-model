@@ -193,27 +193,6 @@ def main():
     # ── מספר עובדים מ-DB_HR_Costs
     df_emp_counts = load_employee_counts(f_in) if f_in else __import__('pandas').DataFrame()
 
-    # ── K+L: הצג msgs + סיכום טעינה בסרגל הצד ─────────────────────────────
-    with st.sidebar:
-        with st.expander("📋 סיכום טעינה", expanded=False):
-            for _msg in msgs:
-                if "✅" in _msg:
-                    st.success(_msg)
-                elif "⚠️" in _msg:
-                    st.warning(_msg)
-                elif "❌" in _msg:
-                    st.error(_msg)
-                else:
-                    st.info(_msg)
-            # L – ספירת רשומות
-            _srv_count = len(df_srv_prices) if df_srv_prices is not None else 0
-            _hr_count  = len(df_hr)         if df_hr        is not None else 0
-            _hier_count = len(df_srv_hier)  if df_srv_hier  is not None else 0
-            st.caption(
-                f"👥 תקנים: **{_hr_count:,}** | "
-                f"📋 שירותים: **{_srv_count:,}** | "
-                f"🗂️ היררכיה: **{_hier_count:,}**"
-            )
 
     if st.session_state.view_mode == 'edit':
         show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, params,
