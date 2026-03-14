@@ -259,6 +259,9 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 annual_col, annual_fmt = unit_cost,  fmt['mgmt_curr']
                 sess_cnt_col           = ''
                 sess_prc_col           = ''
+            # Suppress zero annual cost (no point showing ₪0 in that cell)
+            if annual_col == 0:
+                annual_col, annual_fmt = '', fmt['mgmt_normal']
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
             ws.write(row, 2, annual_col,                    annual_fmt)
@@ -365,17 +368,19 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     else:
         ws.write(SUMM_HR, 1, 0, fmt['mgmt_sum_val'])
 
-    # Ops row (already negative in df values)
-    if op_total_cell:
-        ws.write_formula(SUMM_OPS, 1, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
-    else:
-        ws.write(SUMM_OPS, 1, 0, fmt['mgmt_sum_val'])
+    # Ops row – skip entirely when zero (row still holds NS assumption in cols E-F)
+    if s_op != 0:
+        if op_total_cell:
+            ws.write_formula(SUMM_OPS, 1, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
+        else:
+            ws.write(SUMM_OPS, 1, 0, fmt['mgmt_sum_val'])
 
-    # CAPEX row (already negative in df values)
-    if inv_total_cell:
-        ws.write_formula(SUMM_CAPEX, 1, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
-    else:
-        ws.write(SUMM_CAPEX, 1, 0, fmt['mgmt_sum_val'])
+    # CAPEX row – skip entirely when zero (row still holds OVH assumption in cols E-F)
+    if si != 0:
+        if inv_total_cell:
+            ws.write_formula(SUMM_CAPEX, 1, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
+        else:
+            ws.write(SUMM_CAPEX, 1, 0, fmt['mgmt_sum_val'])
 
     # Operating profit = revenue + HR + ops
     ws.write_formula(SUMM_EBITDA, 1, f'=B{E_REV}+B{E_HR}+B{E_OPS}', fmt['mgmt_profit_val'], prof_b_new)
@@ -402,6 +407,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         (SUMM_ROI,    'שנים להחזר השקעה'),
         (SUMM_REC,    'המלצה עסקית'),
     ]:
+        if r_idx == SUMM_OPS   and s_op == 0: continue
+        if r_idx == SUMM_CAPEX and si   == 0: continue
         lf = fmt['mgmt_profit_label'] if r_idx in (SUMM_EBITDA, SUMM_PROFIT) else fmt['mgmt_sum_label']
         ws.write(r_idx, 0, label, lf)
 
