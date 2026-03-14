@@ -223,8 +223,10 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     if not df_manpower.empty:
         ws.merge_range(row, 0, row, 5, 'פירוט כוח אדם', fmt['mgmt_title_sec'])
         row += 1
+        # 6 cols: A=name  B=FTEs  C=annual cost/unit  D=sess qty  E=sess price  F=total
         for i, h in enumerate([
-            'שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)', 'ססיות לתקן', 'סה"כ עלות (₪)',
+            'שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)',
+            'כמות ססיות לתקן', 'מחיר ססייה (₪)', 'סה"כ עלות (₪)',
         ]):
             ws.write(row, i, h, fmt['mgmt_header'])
         row += 1
@@ -238,45 +240,45 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             sess_total     = sess_qty * sess_cost_unit
             fte_count      = max(float(r['כמות שירותים רגילים']), 1)
             unit_cost      = r['עלות לשירות']
+            sess_per_fte   = sess_qty / fte_count if fte_count else 0
             if annual_salary == 0 and sess_total > 0:
-                # Sessions-only FTE: no annual salary
-                total_cost   = sess_total
-                name_display = r['שם שירות']
-                annual_col, annual_fmt = '', fmt['mgmt_normal']
-                sess_per_fte = sess_qty / fte_count
-                sess_col = f'{int(sess_per_fte)} ססיות × ₪{sess_cost_unit:,.0f}'
-                sess_fmt = fmt['mgmt_normal']
+                # Sessions-only FTE
+                total_cost             = sess_total
+                annual_col, annual_fmt = '',        fmt['mgmt_normal']
+                sess_cnt_col           = int(sess_per_fte)
+                sess_prc_col           = sess_cost_unit
             elif sess_total > 0:
                 # Both annual salary and sessions
-                total_cost   = annual_salary + sess_total
-                name_display = r['שם שירות']
-                annual_col, annual_fmt = unit_cost, fmt['mgmt_curr']
-                sess_per_fte = sess_qty / fte_count
-                sess_col = f'{int(sess_per_fte)} ססיות × ₪{sess_cost_unit:,.0f}'
-                sess_fmt = fmt['mgmt_normal']
+                total_cost             = annual_salary + sess_total
+                annual_col, annual_fmt = unit_cost,  fmt['mgmt_curr']
+                sess_cnt_col           = int(sess_per_fte)
+                sess_prc_col           = sess_cost_unit
             else:
-                # Salary-only FTE: no sessions
-                total_cost   = annual_salary
-                name_display = r['שם שירות']
-                annual_col, annual_fmt = unit_cost, fmt['mgmt_curr']
-                sess_col, sess_fmt = '', fmt['mgmt_normal']
-            ws.write(row, 0, name_display,                 fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'],    fmt['mgmt_normal'])
-            ws.write(row, 2, annual_col,                   annual_fmt)
-            ws.write(row, 3, sess_col,                     sess_fmt)
-            ws.write(row, 4, total_cost,                   fmt['mgmt_curr'])
+                # Salary-only FTE
+                total_cost             = annual_salary
+                annual_col, annual_fmt = unit_cost,  fmt['mgmt_curr']
+                sess_cnt_col           = ''
+                sess_prc_col           = ''
+            ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
+            ws.write(row, 2, annual_col,                    annual_fmt)
+            ws.write(row, 3, sess_cnt_col,                  fmt['mgmt_normal'])
+            ws.write(row, 4, sess_prc_col,
+                     fmt['mgmt_curr'] if sess_prc_col != '' else fmt['mgmt_normal'])
+            ws.write(row, 5, total_cost,                    fmt['mgmt_curr'])
             s_mp += total_cost; row += 1
         for _, r in df_mp_shift.iterrows():
-            ws.write(row, 0, r['שם שירות'],               fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'],    fmt['mgmt_normal'])
-            ws.write(row, 2, r['עלות לשירות'],             fmt['mgmt_curr'])
-            ws.write(row, 3, '',                            fmt['mgmt_normal'])
-            ws.write(row, 4, abs(r['סה"כ נטו לכיס']),     fmt['mgmt_curr'])
+            ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
+            ws.write(row, 2, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 3, '',                             fmt['mgmt_normal'])
+            ws.write(row, 4, '',                             fmt['mgmt_normal'])
+            ws.write(row, 5, abs(r['סה"כ נטו לכיס']),      fmt['mgmt_curr'])
             s_mp += abs(r['סה"כ נטו לכיס']); row += 1
         mp_last_data_excel = row
         ws.write(row, 0, 'סה"כ כוח אדם', fmt['mgmt_normal_bold'])
-        ws.write_formula(row, 4, f'=SUM(E{mp_data_start_excel}:E{mp_last_data_excel})', fmt['mgmt_curr_bold'], s_mp)
-        mp_total_cell = f'E{row + 1}'
+        ws.write_formula(row, 5, f'=SUM(F{mp_data_start_excel}:F{mp_last_data_excel})', fmt['mgmt_curr_bold'], s_mp)
+        mp_total_cell = f'F{row + 1}'
         row += 2
 
     # ---- Operations -----------------------------------------------------
