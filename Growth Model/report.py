@@ -189,8 +189,9 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             # Service display name
             _svc_code    = str(r.get('קוד שירות', '')).strip()
             _svc_display = f"{r['שם שירות']} - {_svc_code}" if _svc_code else r['שם שירות']
+            qty_raw = r['כמות שירותים רגילים']
             ws.write(row, CN, _svc_display, fmt['mgmt_normal'])
-            ws.write(row, CQ, qty_eff,      fmt['mgmt_curr'])
+            ws.write_formula(row, CQ, f'={qty_raw}*(1-{ns_ref})', fmt['mgmt_curr'], qty_eff)
             ws.write(row, CG, u_gross_val,  fmt['mgmt_curr'])
             if is_private:
                 ws.write_formula(row, CNT,
@@ -222,7 +223,9 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     if not df_manpower.empty:
         ws.merge_range(row, 0, row, 5, 'פירוט כוח אדם', fmt['mgmt_title_sec'])
         row += 1
-        for i, h in enumerate(['תפקיד / משרה', 'תקנים / עובדים', 'עלות שנתית / ססיות לתקן', 'סה"כ עלות (₪)']):
+        for i, h in enumerate([
+            'שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)', 'ססיות לתקן', 'סה"כ עלות (₪)',
+        ]):
             ws.write(row, i, h, fmt['mgmt_header'])
         row += 1
         mp_data_start_excel = row + 1
@@ -234,36 +237,46 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             sess_cost_unit = r['עלות ססיה']
             sess_total     = sess_qty * sess_cost_unit
             fte_count      = max(float(r['כמות שירותים רגילים']), 1)
+            unit_cost      = r['עלות לשירות']
             if annual_salary == 0 and sess_total > 0:
+                # Sessions-only FTE: no annual salary
                 total_cost   = sess_total
-                name_display = r['שם שירות'] + ' (ססיות בלבד)'
-                col2_val, col2_fmt = f'{sess_cost_unit:,.0f} × {int(sess_qty)} ססיות', fmt['mgmt_normal']
-            else:
+                name_display = r['שם שירות']
+                annual_col, annual_fmt = '', fmt['mgmt_normal']
+                sess_per_fte = sess_qty / fte_count
+                sess_col = f'{int(sess_per_fte)} ססיות × ₪{sess_cost_unit:,.0f}'
+                sess_fmt = fmt['mgmt_normal']
+            elif sess_total > 0:
+                # Both annual salary and sessions
                 total_cost   = annual_salary + sess_total
                 name_display = r['שם שירות']
-                unit_cost    = r['עלות לשירות']
-                if sess_total > 0 and unit_cost > 0:
-                    sess_per_fte = sess_total / fte_count
-                    col2_val = f'שכר: {unit_cost:,.0f} + ססיות: {sess_per_fte:,.0f}'
-                    col2_fmt = fmt['mgmt_normal']
-                else:
-                    col2_val = unit_cost if unit_cost != 0 else ''
-                    col2_fmt = fmt['mgmt_curr'] if unit_cost != 0 else fmt['mgmt_normal']
-            ws.write(row, 0, name_display,               fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'],  fmt['mgmt_normal'])
-            ws.write(row, 2, col2_val,                   col2_fmt)
-            ws.write(row, 3, total_cost,                 fmt['mgmt_curr'])
+                annual_col, annual_fmt = unit_cost, fmt['mgmt_curr']
+                sess_per_fte = sess_qty / fte_count
+                sess_col = f'{int(sess_per_fte)} ססיות × ₪{sess_cost_unit:,.0f}'
+                sess_fmt = fmt['mgmt_normal']
+            else:
+                # Salary-only FTE: no sessions
+                total_cost   = annual_salary
+                name_display = r['שם שירות']
+                annual_col, annual_fmt = unit_cost, fmt['mgmt_curr']
+                sess_col, sess_fmt = '', fmt['mgmt_normal']
+            ws.write(row, 0, name_display,                 fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],    fmt['mgmt_normal'])
+            ws.write(row, 2, annual_col,                   annual_fmt)
+            ws.write(row, 3, sess_col,                     sess_fmt)
+            ws.write(row, 4, total_cost,                   fmt['mgmt_curr'])
             s_mp += total_cost; row += 1
         for _, r in df_mp_shift.iterrows():
-            ws.write(row, 0, r['שם שירות'],             fmt['mgmt_normal'])
-            ws.write(row, 1, r['כמות שירותים רגילים'],  fmt['mgmt_normal'])
-            ws.write(row, 2, '',                          fmt['mgmt_normal'])
-            ws.write(row, 3, abs(r['סה"כ נטו לכיס']),  fmt['mgmt_curr'])
+            ws.write(row, 0, r['שם שירות'],               fmt['mgmt_normal'])
+            ws.write(row, 1, r['כמות שירותים רגילים'],    fmt['mgmt_normal'])
+            ws.write(row, 2, r['עלות לשירות'],             fmt['mgmt_curr'])
+            ws.write(row, 3, '',                            fmt['mgmt_normal'])
+            ws.write(row, 4, abs(r['סה"כ נטו לכיס']),     fmt['mgmt_curr'])
             s_mp += abs(r['סה"כ נטו לכיס']); row += 1
         mp_last_data_excel = row
         ws.write(row, 0, 'סה"כ כוח אדם', fmt['mgmt_normal_bold'])
-        ws.write_formula(row, 3, f'=SUM(D{mp_data_start_excel}:D{mp_last_data_excel})', fmt['mgmt_curr_bold'], s_mp)
-        mp_total_cell = f'D{row + 1}'
+        ws.write_formula(row, 4, f'=SUM(E{mp_data_start_excel}:E{mp_last_data_excel})', fmt['mgmt_curr_bold'], s_mp)
+        mp_total_cell = f'E{row + 1}'
         row += 2
 
     # ---- Operations -----------------------------------------------------
@@ -390,12 +403,11 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         lf = fmt['mgmt_profit_label'] if r_idx in (SUMM_EBITDA, SUMM_PROFIT) else fmt['mgmt_sum_label']
         ws.write(r_idx, 0, label, lf)
 
-    # Conditional row hiding for zero-value summary rows
-    if s_net_t == 0: ws.set_row(SUMM_REV,   None, None, {'hidden': True})
-    if s_mp == 0:    ws.set_row(SUMM_HR,    None, None, {'hidden': True})
-    if s_op == 0:    ws.set_row(SUMM_OPS,   None, None, {'hidden': True})
-    if si == 0:      ws.set_row(SUMM_CAPEX, None, None, {'hidden': True})
-    if roi_new == 0: ws.set_row(SUMM_ROI,   None, None, {'hidden': True})
+    # Rows 2-6 share the assumption-cell area (NS, OVH, etc.) so they cannot
+    # be hidden without losing the assumption inputs.  Only hide ROI (row 8)
+    # which has no assumption cell and is irrelevant when there is no investment.
+    if roi_new == 0:
+        ws.set_row(SUMM_ROI, None, None, {'hidden': True})
 
     # ---- Column widths --------------------------------------------------
     ws.set_column('A:A', 35)   # service name / label
