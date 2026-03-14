@@ -352,7 +352,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     # Use a floating text-box so the economist can edit the note directly
     # in Excel without re-downloading the report from the app.
     if comments:
-        ws.write(row, 0, 'הערות הכלכלן', fmt['mgmt_header'])
+        ws.write(row, 0, 'הערות נוספות', fmt['mgmt_header'])
         row += 1
         for _r in range(row, row + 10):
             ws.set_row(_r, 18)
