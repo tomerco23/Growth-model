@@ -375,78 +375,84 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     roi_new              = (abs(si) / prof_b_new) if (prof_b_new > 0 and si < 0) else 0
     rec_new              = "✅ מומלץ" if total_net_profit_new > 0 else "🛑 לא מומלץ"
 
-    # ---- Summary table (written last – formulas reference detail totals) -
-    E_REV    = SUMM_REV    + 1   # 3
-    E_HR     = SUMM_HR     + 1   # 4
-    E_OPS    = SUMM_OPS    + 1   # 5
-    E_CAPEX  = SUMM_CAPEX  + 1   # 6
-    E_EBITDA = SUMM_EBITDA + 1   # 7
-    E_PROFIT = SUMM_PROFIT + 1   # 8
-
+    # ---- Summary table – compact (written last, formulas ref detail totals) -
+    # Items are written only when their value != 0, so no empty rows appear.
+    # We track the 1-based Excel row each item lands on to build EBITDA/PROFIT
+    # formulas dynamically.
+    s_row = SUMM_HEADER + 1   # 0-based write row, starts at 2
     ws.write(SUMM_HEADER, 0, 'מדד',     fmt['mgmt_header'])
     ws.write(SUMM_HEADER, 1, 'ערך (₪)', fmt['mgmt_header'])
 
-    # Revenue row
-    if rev_net_cell:
-        ws.write_formula(SUMM_REV, 1, f'={rev_net_cell}', fmt['mgmt_sum_val'], s_net_t)
-    else:
-        ws.write(SUMM_REV, 1, 0, fmt['mgmt_sum_val'])
+    rev_er = hr_er = ops_er = capex_er = ebitda_er = profit_er = None
 
-    # HR row (negate – total is positive cost)
-    if mp_total_cell:
-        ws.write_formula(SUMM_HR, 1, f'=-{mp_total_cell}', fmt['mgmt_sum_val'], -s_mp)
-    else:
-        ws.write(SUMM_HR, 1, 0, fmt['mgmt_sum_val'])
+    if s_net_t != 0:
+        rev_er = s_row + 1
+        if rev_net_cell:
+            ws.write_formula(s_row, 1, f'={rev_net_cell}', fmt['mgmt_sum_val'], s_net_t)
+        else:
+            ws.write(s_row, 1, s_net_t, fmt['mgmt_sum_val'])
+        ws.write(s_row, 0, 'סה"כ הכנסות שנתיות', fmt['mgmt_sum_label'])
+        s_row += 1
 
-    # Ops row – skip entirely when zero (row still holds NS assumption in cols E-F)
+    if s_mp != 0:
+        hr_er = s_row + 1
+        if mp_total_cell:
+            ws.write_formula(s_row, 1, f'=-{mp_total_cell}', fmt['mgmt_sum_val'], -s_mp)
+        else:
+            ws.write(s_row, 1, -s_mp, fmt['mgmt_sum_val'])
+        ws.write(s_row, 0, 'סה"כ הוצאות כוח אדם', fmt['mgmt_sum_label'])
+        s_row += 1
+
     if s_op != 0:
+        ops_er = s_row + 1
         if op_total_cell:
-            ws.write_formula(SUMM_OPS, 1, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
+            ws.write_formula(s_row, 1, f'={op_total_cell}', fmt['mgmt_sum_val'], s_op)
         else:
-            ws.write(SUMM_OPS, 1, 0, fmt['mgmt_sum_val'])
+            ws.write(s_row, 1, s_op, fmt['mgmt_sum_val'])
+        ws.write(s_row, 0, 'סה"כ הוצאות תפעול', fmt['mgmt_sum_label'])
+        s_row += 1
 
-    # CAPEX row – skip entirely when zero (row still holds OVH assumption in cols E-F)
     if si != 0:
+        capex_er = s_row + 1
         if inv_total_cell:
-            ws.write_formula(SUMM_CAPEX, 1, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
+            ws.write_formula(s_row, 1, f'={inv_total_cell}', fmt['mgmt_sum_val'], si)
         else:
-            ws.write(SUMM_CAPEX, 1, 0, fmt['mgmt_sum_val'])
+            ws.write(s_row, 1, si, fmt['mgmt_sum_val'])
+        ws.write(s_row, 0, 'השקעה חד-פעמית', fmt['mgmt_sum_label'])
+        s_row += 1
 
-    # Operating profit = revenue + HR + ops
-    ws.write_formula(SUMM_EBITDA, 1, f'=B{E_REV}+B{E_HR}+B{E_OPS}', fmt['mgmt_profit_val'], prof_b_new)
+    # Operating profit = revenue + HR + ops (only present items)
+    ebitda_er    = s_row + 1
+    ebitda_parts = [f'B{er}' for er in [rev_er, hr_er, ops_er] if er is not None]
+    ws.write_formula(s_row, 1,
+        ('=' + '+'.join(ebitda_parts)) if ebitda_parts else '=0',
+        fmt['mgmt_profit_val'], prof_b_new)
+    ws.write(s_row, 0, 'רווח תפעולי', fmt['mgmt_profit_label'])
+    s_row += 1
 
-    # Net profit = operating profit + CAPEX (CAPEX already negative)
-    ws.write_formula(SUMM_PROFIT, 1, f'=B{E_EBITDA}+B{E_CAPEX}', fmt['mgmt_profit_val'], total_net_profit_new)
+    # Net profit = operating profit + CAPEX (only if CAPEX exists)
+    profit_er    = s_row + 1
+    profit_parts = [f'B{ebitda_er}']
+    if capex_er is not None:
+        profit_parts.append(f'B{capex_er}')
+    ws.write_formula(s_row, 1, '=' + '+'.join(profit_parts),
+                     fmt['mgmt_profit_val'], total_net_profit_new)
+    ws.write(s_row, 0, 'רווח כולל (בניכוי השקעה)', fmt['mgmt_profit_label'])
+    s_row += 1
 
-    # ROI = abs(CAPEX) / operating profit
-    ws.write_formula(SUMM_ROI, 1, f'=IF(B{E_EBITDA}>0,-B{E_CAPEX}/B{E_EBITDA},0)', fmt['mgmt_sum_val'], roi_new)
+    # ROI – only if there is an investment with a meaningful payback period
+    if capex_er is not None and roi_new != 0:
+        ws.write_formula(s_row, 1,
+            f'=IF(B{ebitda_er}>0,-B{capex_er}/B{ebitda_er},0)',
+            fmt['mgmt_sum_val'], roi_new)
+        ws.write(s_row, 0, 'שנים להחזר השקעה', fmt['mgmt_sum_label'])
+        s_row += 1
 
     # Recommendation
-    ws.write_formula(SUMM_REC, 1,
-        f'=IF(B{E_PROFIT}>0,"\u2705 \u05de\u05d5\u05de\u05dc\u05e5","\U0001f6d1 \u05dc\u05d0 \u05de\u05d5\u05de\u05dc\u05e5")',
+    ws.write_formula(s_row, 1,
+        f'=IF(B{profit_er}>0,"\u2705 \u05de\u05d5\u05de\u05dc\u05e5","\U0001f6d1 \u05dc\u05d0 \u05de\u05d5\u05de\u05dc\u05e5")',
         fmt['mgmt_sum_val'], rec_new)
-
-    # Labels for summary rows (Hebrew only – no English in parentheses)
-    for r_idx, label in [
-        (SUMM_REV,    'סה"כ הכנסות שנתיות'),
-        (SUMM_HR,     'סה"כ הוצאות כוח אדם'),
-        (SUMM_OPS,    'סה"כ הוצאות תפעול'),
-        (SUMM_CAPEX,  'השקעה חד-פעמית'),
-        (SUMM_EBITDA, 'רווח תפעולי'),
-        (SUMM_PROFIT, 'רווח כולל (בניכוי השקעה)'),
-        (SUMM_ROI,    'שנים להחזר השקעה'),
-        (SUMM_REC,    'המלצה עסקית'),
-    ]:
-        if r_idx == SUMM_OPS   and s_op == 0: continue
-        if r_idx == SUMM_CAPEX and si   == 0: continue
-        lf = fmt['mgmt_profit_label'] if r_idx in (SUMM_EBITDA, SUMM_PROFIT) else fmt['mgmt_sum_label']
-        ws.write(r_idx, 0, label, lf)
-
-    # Rows 2-6 share the assumption-cell area (NS, OVH, etc.) so they cannot
-    # be hidden without losing the assumption inputs.  Only hide ROI (row 8)
-    # which has no assumption cell and is irrelevant when there is no investment.
-    if roi_new == 0:
-        ws.set_row(SUMM_ROI, None, None, {'hidden': True})
+    ws.write(s_row, 0, 'המלצה עסקית', fmt['mgmt_sum_label'])
 
     # ---- Column widths --------------------------------------------------
     ws.set_column('A:A', 35)   # service name / label
