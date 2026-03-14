@@ -263,9 +263,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 sess_cnt_col           = ''
                 sess_prc_col           = ''
                 mp_total_formula       = f'=B{er}*C{er}'
-            # Suppress zero annual cost (no point showing ₪0 in that cell)
+            # Suppress zero annual cost / zero session count
             if annual_col == 0:
                 annual_col, annual_fmt = '', fmt['mgmt_normal']
+            if sess_cnt_col == 0:
+                sess_cnt_col = ''
+                sess_prc_col = ''
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
             ws.write(row, 2, annual_col,                    annual_fmt)
@@ -304,10 +307,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         op_data_start_excel = row + 1
         for _, r in df_op.iterrows():
-            er     = row + 1
-            op_tot = r['סה"כ נטו לכיס']
+            er       = row + 1
+            op_tot   = r['סה"כ נטו לכיס']
+            op_unit  = r['עלות לשירות']
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
-            ws.write(row, 1, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 1, op_unit if op_unit != 0 else '',
+                     fmt['mgmt_curr'] if op_unit != 0 else fmt['mgmt_normal'])
             ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
             ws.write_formula(row, 3, f'=-B{er}*C{er}',      fmt['mgmt_curr'], op_tot)
             s_op += op_tot; row += 1
@@ -327,10 +332,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         inv_data_start_excel = row + 1
         for _, r in df_inv.iterrows():
-            er      = row + 1
-            inv_tot = r['סה"כ נטו לכיס']
+            er       = row + 1
+            inv_tot  = r['סה"כ נטו לכיס']
+            inv_unit = r['עלות לשירות']
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
-            ws.write(row, 1, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 1, inv_unit if inv_unit != 0 else '',
+                     fmt['mgmt_curr'] if inv_unit != 0 else fmt['mgmt_normal'])
             ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
             ws.write(row, 3, r.get('Lifespan', 10),         fmt['mgmt_normal'])
             ws.write_formula(row, 4, f'=-B{er}*C{er}',      fmt['mgmt_curr'], inv_tot)
