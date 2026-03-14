@@ -234,6 +234,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         df_mp_std   = df_manpower[df_manpower['Calc_Mode'] == 'FTE']
         df_mp_shift = df_manpower[df_manpower['Calc_Mode'].isin(['Daily', 'Hourly'])]
         for _, r in df_mp_std.iterrows():
+            er             = row + 1   # 1-based Excel row for formulas
             annual_salary  = abs(r['סה"כ נטו לכיס'])
             sess_qty       = r['כמות שירותי ססיה']
             sess_cost_unit = r['עלות ססיה']
@@ -242,23 +243,26 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             unit_cost      = r['עלות לשירות']
             sess_per_fte   = sess_qty / fte_count if fte_count else 0
             if annual_salary == 0 and sess_total > 0:
-                # Sessions-only FTE
+                # Sessions-only FTE: total = FTEs × sessions_per_FTE × price
                 total_cost             = sess_total
                 annual_col, annual_fmt = '',        fmt['mgmt_normal']
                 sess_cnt_col           = int(sess_per_fte)
                 sess_prc_col           = sess_cost_unit
+                mp_total_formula       = f'=B{er}*D{er}*E{er}'
             elif sess_total > 0:
-                # Both annual salary and sessions
+                # Both annual salary and sessions: total = FTEs × (annual + sess×price)
                 total_cost             = annual_salary + sess_total
                 annual_col, annual_fmt = unit_cost,  fmt['mgmt_curr']
                 sess_cnt_col           = int(sess_per_fte)
                 sess_prc_col           = sess_cost_unit
+                mp_total_formula       = f'=B{er}*(C{er}+D{er}*E{er})'
             else:
-                # Salary-only FTE
+                # Salary-only FTE: total = FTEs × annual
                 total_cost             = annual_salary
                 annual_col, annual_fmt = unit_cost,  fmt['mgmt_curr']
                 sess_cnt_col           = ''
                 sess_prc_col           = ''
+                mp_total_formula       = f'=B{er}*C{er}'
             # Suppress zero annual cost (no point showing ₪0 in that cell)
             if annual_col == 0:
                 annual_col, annual_fmt = '', fmt['mgmt_normal']
@@ -268,16 +272,18 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 3, sess_cnt_col,                  fmt['mgmt_normal'])
             ws.write(row, 4, sess_prc_col,
                      fmt['mgmt_curr'] if sess_prc_col != '' else fmt['mgmt_normal'])
-            ws.write(row, 5, total_cost,                    fmt['mgmt_curr'])
+            ws.write_formula(row, 5, mp_total_formula,      fmt['mgmt_curr'], total_cost)
             s_mp += total_cost; row += 1
         for _, r in df_mp_shift.iterrows():
+            er     = row + 1
+            sh_tot = abs(r['סה"כ נטו לכיס'])
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
             ws.write(row, 2, r['עלות לשירות'],              fmt['mgmt_curr'])
             ws.write(row, 3, '',                             fmt['mgmt_normal'])
             ws.write(row, 4, '',                             fmt['mgmt_normal'])
-            ws.write(row, 5, abs(r['סה"כ נטו לכיס']),      fmt['mgmt_curr'])
-            s_mp += abs(r['סה"כ נטו לכיס']); row += 1
+            ws.write_formula(row, 5, f'=B{er}*C{er}',       fmt['mgmt_curr'], sh_tot)
+            s_mp += sh_tot; row += 1
         mp_last_data_excel = row
         ws.write(row, 0, 'סה"כ כוח אדם', fmt['mgmt_normal_bold'])
         ws.write_formula(row, 5, f'=SUM(F{mp_data_start_excel}:F{mp_last_data_excel})', fmt['mgmt_curr_bold'], s_mp)
@@ -298,11 +304,13 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         op_data_start_excel = row + 1
         for _, r in df_op.iterrows():
-            ws.write(row, 0, r['שם שירות'],             fmt['mgmt_normal'])
-            ws.write(row, 1, r['עלות לשירות'],          fmt['mgmt_curr'])
-            ws.write(row, 2, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
-            ws.write(row, 3, r['סה"כ נטו לכיס'],       fmt['mgmt_curr'])
-            s_op += r['סה"כ נטו לכיס']; row += 1
+            er     = row + 1
+            op_tot = r['סה"כ נטו לכיס']
+            ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
+            ws.write(row, 1, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
+            ws.write_formula(row, 3, f'=-B{er}*C{er}',      fmt['mgmt_curr'], op_tot)
+            s_op += op_tot; row += 1
         op_last_data_excel = row
         ws.write(row, 0, 'סה"כ תפעול', fmt['mgmt_normal_bold'])
         ws.write_formula(row, 3, f'=SUM(D{op_data_start_excel}:D{op_last_data_excel})', fmt['mgmt_curr_bold'], s_op)
@@ -319,12 +327,14 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         inv_data_start_excel = row + 1
         for _, r in df_inv.iterrows():
-            ws.write(row, 0, r['שם שירות'],             fmt['mgmt_normal'])
-            ws.write(row, 1, r['עלות לשירות'],          fmt['mgmt_curr'])
-            ws.write(row, 2, r['כמות שירותים רגילים'], fmt['mgmt_normal'])
-            ws.write(row, 3, r.get('Lifespan', 10),     fmt['mgmt_normal'])
-            ws.write(row, 4, r['סה"כ נטו לכיס'],       fmt['mgmt_curr'])
-            si += r['סה"כ נטו לכיס']; row += 1
+            er      = row + 1
+            inv_tot = r['סה"כ נטו לכיס']
+            ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
+            ws.write(row, 1, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 2, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
+            ws.write(row, 3, r.get('Lifespan', 10),         fmt['mgmt_normal'])
+            ws.write_formula(row, 4, f'=-B{er}*C{er}',      fmt['mgmt_curr'], inv_tot)
+            si += inv_tot; row += 1
         inv_last_data_excel = row
         ws.write(row, 0, 'סה"כ השקעות', fmt['mgmt_normal_bold'])
         ws.write_formula(row, 4, f'=SUM(E{inv_data_start_excel}:E{inv_last_data_excel})', fmt['mgmt_curr_bold'], si)
