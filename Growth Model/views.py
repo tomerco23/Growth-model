@@ -561,11 +561,11 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                     "Category_Heb": st.column_config.Column("קטגוריה", disabled=True),
                     "שם שירות": st.column_config.TextColumn("שם הפריט", width="large"),
                     "כמות שירותים רגילים": st.column_config.NumberColumn("כמות", format="%,.2f"),
-                    "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%,.0f"),
-                    "כמות שירותי ססיה": st.column_config.NumberColumn("ססיות (שנתי)", format="%,.0f"),
-                    "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%,.0f"),
-                    "עלות ססיות שנתית": st.column_config.NumberColumn("עלות ססיות שנ' (₪)", format="%,.0f", disabled=True),
-                    "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%,.0f"),
+                    "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%.0f"),
+                    "כמות שירותי ססיה": st.column_config.NumberColumn("ססיות (שנתי)", format="%.0f"),
+                    "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%.0f"),
+                    "עלות ססיות שנתית": st.column_config.NumberColumn("עלות ססיות שנ' (₪)", format="%.0f", disabled=True),
+                    "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%.0f"),
                     "Pct_Opt_Raw": st.column_config.NumberColumn("אופטימי %", format="%d%%"),
                     "Pct_Pess_Raw": st.column_config.NumberColumn("פסימי %", format="%d%%"),
                     "Lifespan": st.column_config.NumberColumn("שנות חיים", format="%d"),
@@ -944,9 +944,9 @@ def show_report_view(  # noqa: C901
         rev_display = rev_display.copy()
         rev_display[_num_cols] = np.floor(rev_display[_num_cols])
 
-        _curr_fmt = "₪%,.0f"
+        _curr_fmt = "₪%.0f"
         _col_cfg = {
-            'כמות':              st.column_config.NumberColumn(format="%,.0f"),
+            'כמות':              st.column_config.NumberColumn(format="%.0f"),
             'תעריף ברוטו':       st.column_config.NumberColumn(format=_curr_fmt),
             'תעריף נטו':         st.column_config.NumberColumn(format=_curr_fmt),
             'תעריף קאפ':         st.column_config.NumberColumn(format=_curr_fmt),
@@ -1026,10 +1026,10 @@ def show_report_view(  # noqa: C901
                 'Category_Heb':        st.column_config.Column("קטגוריה"),
                 'שם שירות':            st.column_config.Column("שם"),
                 'כמות שירותים רגילים': st.column_config.NumberColumn("כמות", format="%,.2f"),
-                'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%,.0f"),
-                'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ נטו", format="₪%,.0f"),
-                'תרחיש אופטימי':       st.column_config.NumberColumn("אופטימי", format="₪%,.0f"),
-                'תרחיש פסימי':         st.column_config.NumberColumn("פסימי", format="₪%,.0f"),
+                'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%.0f"),
+                'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ נטו", format="₪%.0f"),
+                'תרחיש אופטימי':       st.column_config.NumberColumn("אופטימי", format="₪%.0f"),
+                'תרחיש פסימי':         st.column_config.NumberColumn("פסימי", format="₪%.0f"),
             }
             st.dataframe(
                 df_exp[_exp_cols_exist], use_container_width=True, hide_index=True,
@@ -1044,10 +1044,10 @@ def show_report_view(  # noqa: C901
         _inv_cols_exist = [c for c in _inv_cols if c in df_inv.columns]
         _inv_col_cfg = {
             'שם שירות':            st.column_config.Column("שם ההשקעה"),
-            'כמות שירותים רגילים': st.column_config.NumberColumn("כמות", format="%,.0f"),
-            'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%,.0f"),
+            'כמות שירותים רגילים': st.column_config.NumberColumn("כמות", format="%.0f"),
+            'עלות לשירות':         st.column_config.NumberColumn("עלות יחידה", format="₪%.0f"),
             'Lifespan':            st.column_config.NumberColumn("שנות חיים", format="%d"),
-            'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ", format="₪%,.0f"),
+            'סה"כ נטו לכיס':       st.column_config.NumberColumn("סה\"כ", format="₪%.0f"),
         }
         st.dataframe(
             df_inv[_inv_cols_exist], use_container_width=True, hide_index=True,
