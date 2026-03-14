@@ -278,11 +278,14 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write_formula(row, 5, mp_total_formula,      fmt['mgmt_curr'], total_cost)
             s_mp += total_cost; row += 1
         for _, r in df_mp_shift.iterrows():
-            er     = row + 1
-            sh_tot = abs(r['סה"כ נטו לכיס'])
+            er         = row + 1
+            sh_tot     = abs(r['סה"כ נטו לכיס'])
+            sh_unit    = r['עלות לשירות']
+            sh_unit_v  = sh_unit if sh_unit != 0 else ''
+            sh_unit_f  = fmt['mgmt_curr'] if sh_unit != 0 else fmt['mgmt_normal']
             ws.write(row, 0, r['שם שירות'],                fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'],     fmt['mgmt_normal'])
-            ws.write(row, 2, r['עלות לשירות'],              fmt['mgmt_curr'])
+            ws.write(row, 2, sh_unit_v,                     sh_unit_f)
             ws.write(row, 3, '',                             fmt['mgmt_normal'])
             ws.write(row, 4, '',                             fmt['mgmt_normal'])
             ws.write_formula(row, 5, f'=B{er}*C{er}',       fmt['mgmt_curr'], sh_tot)
