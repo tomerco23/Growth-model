@@ -13,6 +13,16 @@ try:
 except ImportError:
     _PLOTLY_AVAILABLE = False
 
+# Quill rich-text editor (custom component — no pip dependency beyond streamlit)
+from pathlib import Path as _Path
+import streamlit.components.v1 as _components
+
+_QUILL_COMPONENT_DIR = _Path(__file__).parent / "quill_component"
+_quill_editor = _components.declare_component(
+    "quill_editor",
+    path=str(_QUILL_COMPONENT_DIR),
+)
+
 from calculations import calculate_detailed_rows
 from constants import CAT_MAP, Category
 from report import create_hybrid_report_sheet, generate_verbal_analysis
@@ -1055,12 +1065,16 @@ def show_report_view(  # noqa: C901
     st.divider()
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.text_area(
-            "הערות הכלכלן:",
-            key='general_comments',
-            height=180,
-            placeholder="הזן כאן הערות, הנחות יסוד, מגבלות, המלצות לממשל... הערות אלה יופיעו בדוח האקסל.",
+        st.markdown("**הערות הכלכלן:**")
+        # Rich-text Quill editor — value stored in session_state.general_comments
+        _quill_val = _quill_editor(
+            value=st.session_state.get('general_comments', ''),
+            height=220,
+            key='_quill_raw',
         )
+        # Sync editor output back to session state (None on first render before JS fires)
+        if _quill_val is not None:
+            st.session_state['general_comments'] = _quill_val
 
     with c2:
         include_cap = st.checkbox(

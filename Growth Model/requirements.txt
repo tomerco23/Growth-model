@@ -1,0 +1,11 @@
+streamlit==1.53.0
+pandas==2.3.3
+numpy==2.4.1
+xlsxwriter==3.2.9
+openpyxl==3.1.5
+plotly==6.5.2
+playwright==1.58.0
+streamlit-shortcuts==1.2.1
+
+# After pip install, run once:
+#   python -m playwright install chromium

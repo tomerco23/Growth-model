@@ -1,6 +1,48 @@
+import io
 import pandas as pd
 
-from utils import format_number_str
+from utils import format_number_str, is_html, html_to_png_bytes, strip_html
+
+
+# ---------------------------------------------------------------------------
+# Comments embedding helper (rich-text HTML → PNG image, or plain-text fallback)
+# ---------------------------------------------------------------------------
+
+def _embed_comments_image(ws, row: int, col: int, comments: str) -> None:
+    """Embed the economist's comments block into *ws* at (row, col).
+
+    • If *comments* is Quill HTML  → render to PNG via Playwright, insert_image.
+    • If Playwright fails or text is plain → insert_textbox fallback.
+    • If the HTML is empty (Quill default '<p><br></p>') → do nothing.
+    """
+    # Guard: ignore empty Quill state
+    if not comments or not strip_html(comments).strip():
+        return
+
+    if is_html(comments):
+        try:
+            png = html_to_png_bytes(comments, width_px=680)
+            ws.insert_image(row, col, 'comments.png', {
+                'image_data':      io.BytesIO(png),
+                'object_position': 2,   # move with cells, don't resize
+                'x_scale':         1.0,
+                'y_scale':         1.0,
+            })
+            return
+        except Exception:
+            comments = strip_html(comments)   # fall through to textbox
+
+    # Plain-text fallback
+    _rtl = any('\u0590' <= c <= '\u05FF' for c in comments)
+    ws.insert_textbox(row, col, comments, {
+        'width':           620,
+        'height':          180,
+        'font':            {'name': 'Arial', 'size': 11},
+        'align':           {'vertical': 'top',
+                            'horizontal': 'right' if _rtl else 'left'},
+        'text_direction':  'rtl' if _rtl else 'ltr',
+        'object_position': 2,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -414,24 +456,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 2
 
     # ---- Comments -------------------------------------------------------
-    # Use a floating text-box so the economist can edit the note directly
-    # in Excel without re-downloading the report from the app.
-    if comments:
+    if strip_html(comments).strip() if comments else False:
         ws.write(row, 0, 'הערות נוספות', fmt['mgmt_header'])
         row += 1
         for _r in range(row, row + 10):
             ws.set_row(_r, 18)
-        # Auto-detect direction: RTL for Hebrew text, LTR for English
-        _rtl = any('\u0590' <= c <= '\u05FF' for c in comments)
-        ws.insert_textbox(row, 0, comments, {
-            'width':           620,
-            'height':          180,
-            'font':            {'name': 'Arial', 'size': 11},
-            'align':           {'vertical': 'top',
-                                'horizontal': 'right' if _rtl else 'left'},
-            'text_direction':  'rtl' if _rtl else 'ltr',
-            'object_position': 1,   # move but don't size with cells
-        })
+        _embed_comments_image(ws, row, 0, comments)
         row += 10
 
     # ---- Compute Python fallback values for summary ---------------------
@@ -1058,12 +1088,12 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         ws.write(row_idx, 4, si, fmt['curr_bold'])
 
     row_idx += 3
-    if comments:
+    if comments and strip_html(comments).strip():
         ws.write(row_idx, 0, "הערות הכלכלן", fmt['header'])
         row_idx += 1
         for _r in range(row_idx, row_idx + 8):
             ws.set_row(_r, 20)
-        ws.merge_range(row_idx, 0, row_idx + 7, 7, comments, fmt['text_box'])
+        _embed_comments_image(ws, row_idx, 0, comments)
 
     ws.set_column('A:A', 35)
     ws.set_column('B:K', 18)
