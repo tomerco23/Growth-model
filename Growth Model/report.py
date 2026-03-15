@@ -812,10 +812,14 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         (df_flat['Pct_Opt_Raw'] == 0).all() and (df_flat['Pct_Pess_Raw'] == 0).all()
     )
     _rev_m = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    _y1_tot = _rev_m['סה"כ נטו לכיס'].sum() if not _rev_m.empty else 0
     _y2_tot = _rev_m['Net_Y2'].sum() if not _rev_m.empty else 0
     _y3_tot = _rev_m['Net_Y3'].sum() if not _rev_m.empty else 0
     _y4_tot = _rev_m['Net_Y4'].sum() if not _rev_m.empty else 0
-    show_growth = (abs(_y2_tot) + abs(_y3_tot) + abs(_y4_tot)) > 0.01
+    # Show growth sheet only when at least one year diverges from Y1
+    show_growth = (
+        abs(_y2_tot - _y1_tot) + abs(_y3_tot - _y1_tot) + abs(_y4_tot - _y1_tot)
+    ) > 0.01
 
     # ---- New sheets: CEO dashboard first, then scenario + growth -----------
     create_dashboard_sheet(wb, fmt, df_flat, p_name, comments)
