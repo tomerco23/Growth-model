@@ -165,8 +165,8 @@ def add_hr_item(df_hr: pd.DataFrame):
     user_cost_monthly = st.session_state.get('manpower_form_input', 0.0)
     sess = st.session_state.get('hr_sess', 0.0)
     s_pr = st.session_state.get('hr_sess_price', 0.0)
-    p_opt = st.session_state.get('hr_opt', 100)
-    p_pess = st.session_state.get('hr_pess', 100)
+    p_opt = st.session_state.get('hr_opt', 0)
+    p_pess = st.session_state.get('hr_pess', 0)
 
     for job_name in roles:
         final_cost_annual = user_cost_monthly * 12
@@ -224,8 +224,8 @@ def add_srv_item(df_srv_prices: pd.DataFrame, params: dict):
     save_history()
     priv = st.session_state.get('srv_priv', False)
     new_s = st.session_state.get('srv_new', False)
-    p_opt = st.session_state.get('srv_opt', 100)
-    p_pess = st.session_state.get('srv_pess', 80)
+    p_opt = st.session_state.get('srv_opt', 0)
+    p_pess = st.session_state.get('srv_pess', 0)
     sess_vol = st.session_state.get('srv_sess_vol', 0)
     sess_cost_val = st.session_state.get('srv_sess_cost', 0)
     g_y2 = st.session_state.get('srv_g2', 0.0)
@@ -351,8 +351,8 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         cost = c2.number_input("עלות (₪)", 0, 100_000_000, 500_000, 10_000, format="%d")
         qty = c3.number_input("כמות", 1, 100, 1)
         c4, c5, c6 = st.columns(3)
-        p_opt = c4.number_input("תרחיש אופטימי (% מהעלות)", 0, 200, 100)
-        p_pess = c5.number_input("תרחיש פסימי (% מהעלות)", 0, 200, 100)
+        p_opt = c4.number_input("תרחיש אופטימי (% מהעלות)", 0, 200, 0)
+        p_pess = c5.number_input("תרחיש פסימי (% מהעלות)", 0, 200, 0)
         life = c6.number_input("שנות חיים (פחת)", 1, 50, 10)
         if st.button("➕ הוסף השקעה"):
             save_history()
@@ -398,10 +398,10 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                         on_change=lambda: st.session_state.update({'manpower_form_cost': st.session_state.manpower_form_input}),
                     )
                     c2.number_input("ססיות בחודש", 0.0, 200.0, 0.0, key="hr_sess")
-                    c2.number_input("מחיר ססיה", 0.0, 10000.0, 1000.0, format="%.0f", key="hr_sess_price")
+                    c2.number_input("מחיר ססיה", 0.0, 10000.0, 0.0, format="%.0f", key="hr_sess_price")
                     c3, c4 = st.columns(2)
-                    c3.number_input("תרחיש אופטימי (שכר %)", 0, 200, 100, key="hr_opt")
-                    c4.number_input("תרחיש פסימי (שכר %)", 0, 200, 100, key="hr_pess")
+                    c3.number_input("תרחיש אופטימי (שכר %)", 0, 200, 0, key="hr_opt")
+                    c4.number_input("תרחיש פסימי (שכר %)", 0, 200, 0, key="hr_pess")
                     st.button("➕ הוסף משרה/ות", on_click=add_hr_item, args=(df_hr,))
 
             elif calc_mode == "תורנות יומית (ערך יום)":
@@ -424,7 +424,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                     st.session_state.growth_items.append({
                         "Category": Category.MANPOWER, "Name": f"{name} (מודל יומי)",
                         "Quantity": float(num_employees), "Unit_Cost": single_cost,
-                        "Sessions": 0, "Sess_Price": 0, "Pct_Opt": 100, "Pct_Pess": 100,
+                        "Sessions": 0, "Sess_Price": 0, "Pct_Opt": 0, "Pct_Pess": 0,
                         "Calc_Mode": "Daily", "Base_Value": base_val, "Weight": weight,
                         "Qty_Shifts_Per_Emp": qty_shifts, "Overhead": overhead, "Occ_Bonus": occ_bonus,
                     })
@@ -449,7 +449,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                     st.session_state.growth_items.append({
                         "Category": Category.MANPOWER, "Name": f"{name} (מודל שעתי)",
                         "Quantity": float(num_employees), "Unit_Cost": single_cost,
-                        "Sessions": 0, "Sess_Price": 0, "Pct_Opt": 100, "Pct_Pess": 100,
+                        "Sessions": 0, "Sess_Price": 0, "Pct_Opt": 0, "Pct_Pess": 0,
                         "Calc_Mode": "Hourly", "Hour_Cost": hour_cost,
                         "Hours_Per_Shift": hours_per_shift, "Qty_Shifts_Per_Emp": qty_shifts,
                         "Occ_Bonus": extra_pct,
@@ -463,8 +463,8 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
             op_cost = c2.number_input("עלות (₪)", 0, 10_000_000, 50_000)
             qty_op = c3.number_input("כמות/יחידות", 1, 100, 1, key="q_op")
             c3_b, c4_b = st.columns(2)
-            p_opt = c3_b.number_input("תרחיש אופטימי (תפעול %)", 0, 200, 100, key="op_o")
-            p_pess = c4_b.number_input("תרחיש פסימי (תפעול %)", 0, 200, 100, key="op_p")
+            p_opt = c3_b.number_input("תרחיש אופטימי (תפעול %)", 0, 200, 0, key="op_o")
+            p_pess = c4_b.number_input("תרחיש פסימי (תפעול %)", 0, 200, 0, key="op_p")
             if st.button("➕ הוסף הוצאה"):
                 save_history()
                 st.session_state.growth_items.append({
@@ -501,8 +501,8 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         c2.checkbox("פרטי?", key="srv_priv")
         c2.checkbox("חדש?", key="srv_new")
         c3, c4 = st.columns(2)
-        c3.number_input("תרחיש אופטימי (ביקוש %)", 0, 200, 100, key="srv_opt")
-        c4.number_input("תרחיש פסימי (ביקוש %)", 0, 200, 80, key="srv_pess")
+        c3.number_input("תרחיש אופטימי (ביקוש %)", 0, 200, 0, key="srv_opt")
+        c4.number_input("תרחיש פסימי (ביקוש %)", 0, 200, 0, key="srv_pess")
         st.markdown("**הגדרת ססיות לשירות (אופציונלי - למידע בלבד):**")
         c_sess_v, c_sess_p = st.columns(2)
         c_sess_v.number_input("כמות ססיות נדרשת לשירות זה (שנתי)", 0, 10000, 0, key="srv_sess_vol")

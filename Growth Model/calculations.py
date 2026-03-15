@@ -20,8 +20,11 @@ def calculate_detailed_rows(items: list, params: dict):
         srv_name = name
         code = ""
 
-        pct_opt_val = item.get('Pct_Opt', 100) / 100.0
-        pct_pess_val = item.get('Pct_Pess', 100) / 100.0
+        pct_opt_raw = item.get('Pct_Opt', 0)
+        pct_pess_raw = item.get('Pct_Pess', 0)
+        # 0 means "not configured" → use base (1.0 multiplier), not zero
+        pct_opt_val = (pct_opt_raw / 100.0) if pct_opt_raw != 0 else 1.0
+        pct_pess_val = (pct_pess_raw / 100.0) if pct_pess_raw != 0 else 1.0
         g_y2 = item.get('Growth_Y2', 0) / 100.0
         g_y3 = item.get('Growth_Y3', 0) / 100.0
         g_y4 = item.get('Growth_Y4', 0) / 100.0
@@ -49,8 +52,8 @@ def calculate_detailed_rows(items: list, params: dict):
             'סה"כ נטו לכיס': 0,
             "תרחיש אופטימי": 0,
             "תרחיש פסימי": 0,
-            "Pct_Opt_Raw": item.get('Pct_Opt', 100),
-            "Pct_Pess_Raw": item.get('Pct_Pess', 100),
+            "Pct_Opt_Raw": item.get('Pct_Opt', 0),
+            "Pct_Pess_Raw": item.get('Pct_Pess', 0),
             "Net_Y2": 0,
             "Net_Y3": 0,
             "Net_Y4": 0,
