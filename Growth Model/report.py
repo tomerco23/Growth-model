@@ -325,10 +325,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_curr'])
             if C_ANN is not None:
                 ws.write(row, C_ANN, ann_v, ann_f)
-            ws.write(row, C_SQ, sq_v,
-                     fmt['mgmt_curr'] if sq_v != '' else fmt['mgmt_normal'])
-            ws.write(row, C_SP, sp_v,
-                     fmt['mgmt_curr'] if sp_v != '' else fmt['mgmt_normal'])
+            if C_SQ is not None:
+                ws.write(row, C_SQ, sq_v,
+                         fmt['mgmt_curr'] if sq_v != '' else fmt['mgmt_normal'])
+            if C_SP is not None:
+                ws.write(row, C_SP, sp_v,
+                         fmt['mgmt_curr'] if sp_v != '' else fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, mp_formula, fmt['mgmt_curr'], total_cost)
             s_mp += total_cost; row += 1
 
