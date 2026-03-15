@@ -719,90 +719,6 @@ def create_growth_sheet(wb, fmt, df_flat, p_name):
     ws.set_column('B:F', 16)
 
 
-# ---------------------------------------------------------------------------
-# Sheet 3 (new): לוח מחוונים – executive dashboard
-# ---------------------------------------------------------------------------
-
-def create_dashboard_sheet(wb, fmt, df_flat, p_name, comments):
-    """New tab 'לוח מחוונים' – CEO-ready single-page summary.
-    Banner + KPI boxes + scenario strip + optional growth strip + comment."""
-    ws = wb.add_worksheet('לוח מחוונים')
-    ws.right_to_left()
-    ws.hide_gridlines(2)
-
-    rev, mp, op, inv, ebitda, profit, roi = _scenario_aggregates(df_flat)
-
-    # Row 0: Decision banner (height 60)
-    ws.set_row(0, 60)
-    is_rec  = profit['base'] > 0
-    b_fmt   = fmt['dash_go'] if is_rec else fmt['dash_stop']
-    b_text  = ('✅  ההחלטה מומלצת' if is_rec else '🛑  ההחלטה אינה מומלצת') + f'  |  {p_name}'
-    ws.merge_range(0, 0, 0, 5, b_text, b_fmt)
-
-    # Row 1: spacer
-    ws.set_row(1, 8)
-
-    # Rows 2-3: KPI boxes  [EBITDA | ROI | Investment]
-    ws.set_row(2, 22)
-    ws.set_row(3, 54)
-    kpi_defs = [
-        ('רווח תפעולי EBITDA (₪)', ebitda['base'], fmt['dash_kpi_val']),
-        ('שנות החזר השקעה (ROI)',   roi,            fmt['dash_kpi_roi']),
-        ('סה"כ השקעה חד-פעמית (₪)', inv['abs'],     fmt['dash_kpi_val']),
-    ]
-    kpi_cols = [(0, 1), (2, 3), (4, 5)]
-    for (c1, c2), (label, val, vfmt) in zip(kpi_cols, kpi_defs):
-        # Skip zero KPIs (except EBITDA which is always shown)
-        if val == 0 and label != 'רווח תפעולי EBITDA (₪)':
-            continue
-        ws.merge_range(2, c1, 2, c2, label, fmt['dash_kpi_label'])
-        ws.merge_range(3, c1, 3, c2, val,   vfmt)
-
-    # Row 4: spacer
-    ws.set_row(4, 8)
-
-    # Rows 5-6: Scenario strip
-    ws.set_row(5, 22)
-    ws.set_row(6, 44)
-    scen_defs = [
-        ('📉 פסימי',   ebitda['pess'], fmt['scenario_pess_hdr'], fmt['scenario_pess_val']),
-        ('📊 בסיס',    ebitda['base'], fmt['mgmt_header'],        fmt['dash_kpi_val']),
-        ('📈 אופטימי', ebitda['opt'],  fmt['scenario_opt_hdr'],  fmt['scenario_opt_val']),
-    ]
-    for (c1, c2), (label, val, hdr_f, val_f) in zip(kpi_cols, scen_defs):
-        ws.merge_range(5, c1, 5, c2, label, hdr_f)
-        ws.merge_range(6, c1, 6, c2, val if val != 0 else '', val_f if val != 0 else fmt['mgmt_normal'])
-
-    # Row 7: spacer
-    ws.set_row(7, 8)
-
-    # Rows 8-9: 4-year growth projection (only if growth configured)
-    rev_main = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
-    next_row = 8
-    if not rev_main.empty:
-        y1 = rev_main['סה"כ נטו לכיס'].sum()
-        y2 = rev_main['Net_Y2'].sum()
-        y3 = rev_main['Net_Y3'].sum()
-        y4 = rev_main['Net_Y4'].sum()
-        if (abs(y2 - y1) + abs(y3 - y1) + abs(y4 - y1)) > 0.01:
-            ws.set_row(8, 22)
-            ws.set_row(9, 44)
-            growth_labels = ['הכנסות שנה 1 (₪)', 'שנה 2 (₪)', 'שנה 3 (₪)', 'שנה 4 (₪)']
-            growth_vals   = [y1, y2, y3, y4]
-            for (c1, c2), lbl, val in zip([(0, 1), (2, 2), (3, 4), (5, 5)], growth_labels, growth_vals):
-                ws.merge_range(8, c1, 8, c2, lbl,                    fmt['mgmt_header'])
-                ws.merge_range(9, c1, 9, c2, val if val != 0 else '', fmt['dash_kpi_val'] if val != 0 else fmt['mgmt_normal'])
-            next_row = 11
-
-    # Comment snippet (first 150 chars)
-    if comments:
-        snippet = comments[:150] + ('...' if len(comments) > 150 else '')
-        ws.set_row(next_row, 24)
-        ws.merge_range(next_row, 0, next_row, 5, f'📝 {snippet}', fmt['text_box'])
-
-    ws.set_column('A:F', 16)
-
-
 def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True, prof_opt=0):
     wb = writer.book
     fmt = _add_formats(wb)
@@ -821,8 +737,7 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         abs(_y2_tot - _y1_tot) + abs(_y3_tot - _y1_tot) + abs(_y4_tot - _y1_tot)
     ) > 0.01
 
-    # ---- New sheets: CEO dashboard first, then scenario + growth -----------
-    create_dashboard_sheet(wb, fmt, df_flat, p_name, comments)
+    # ---- New sheets: scenario + growth (conditional) -----------------------
     if show_scenarios:
         create_scenario_sheet(wb, fmt, df_flat, p_name)
     if show_growth:
