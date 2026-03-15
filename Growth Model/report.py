@@ -239,18 +239,36 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         df_mp_std   = df_manpower[df_manpower['Calc_Mode'] == 'FTE']
         df_mp_shift = df_manpower[df_manpower['Calc_Mode'].isin(['Daily', 'Hourly'])]
 
-        # Dynamic layout: include annual-cost column only when at least one FTE has non-zero annual cost
-        has_annual_cost = any(r['עלות לשירות'] != 0 for _, r in df_mp_std.iterrows())
-        if has_annual_cost:
-            # 6 cols: A=name B=FTEs C=annual D=sess_qty E=sess_price F=total
+        # Dynamic layout: hide each column group only when ALL values in it are zero.
+        # Annual/unit-cost column: show if any FTE or shift worker has non-zero per-unit cost.
+        # Session columns: show only if any FTE has non-zero session quantity.
+        has_annual_cost = (
+            any(r['עלות לשירות'] != 0 for _, r in df_mp_std.iterrows()) if not df_mp_std.empty else False
+        ) or (
+            any(r['עלות לשירות'] != 0 for _, r in df_mp_shift.iterrows()) if not df_mp_shift.empty else False
+        )
+        has_sessions = (
+            any(r['כמות שירותי ססיה'] != 0 for _, r in df_mp_std.iterrows()) if not df_mp_std.empty else False
+        )
+
+        if has_annual_cost and has_sessions:
+            # 6 cols: name | FTEs | annual | sess_qty | sess_price | total
             mp_headers = ['שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)',
                           'כמות ססיות לתקן', 'מחיר ססייה (₪)', 'סה"כ עלות (₪)']
             C_ANN, C_SQ, C_SP, C_TOT = 2, 3, 4, 5
-        else:
-            # 5 cols: A=name B=FTEs/qty C=sess_qty D=sess_price E=total (annual col removed)
+        elif has_annual_cost:
+            # 4 cols: name | FTEs | annual/unit | total  (session cols removed)
+            mp_headers = ['שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)', 'סה"כ עלות (₪)']
+            C_ANN, C_SQ, C_SP, C_TOT = 2, None, None, 3
+        elif has_sessions:
+            # 5 cols: name | FTEs/qty | sess_qty | sess_price | total  (annual col removed)
             mp_headers = ['שם / תפקיד', 'תקנים',
                           'כמות ססיות לתקן', 'מחיר ססייה (₪)', 'סה"כ עלות (₪)']
             C_ANN, C_SQ, C_SP, C_TOT = None, 2, 3, 4
+        else:
+            # 3 cols: name | FTEs/qty | total  (all amounts zero — both cols hidden)
+            mp_headers = ['שם / תפקיד', 'תקנים', 'סה"כ עלות (₪)']
+            C_ANN, C_SQ, C_SP, C_TOT = None, None, None, 2
 
         _cl = lambda c: chr(ord('A') + c)   # column index → Excel letter
 
@@ -271,15 +289,15 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             unit_cost      = r['עלות לשירות']
             sess_per_fte   = sess_qty / fte_count if fte_count else 0
 
-            if annual_salary == 0 and sess_total > 0:
+            if annual_salary == 0 and sess_total > 0 and C_SQ is not None:
                 # Sessions-only FTE
                 total_cost     = sess_total
                 ann_v, ann_f   = '', fmt['mgmt_normal']
                 sq_v           = int(sess_per_fte)
                 sp_v           = sess_cost_unit
                 mp_formula     = f'=B{er}*{_cl(C_SQ)}{er}*{_cl(C_SP)}{er}'
-            elif sess_total > 0:
-                # Both annual salary and sessions (only reachable when has_annual_cost=True)
+            elif sess_total > 0 and C_SQ is not None:
+                # Both annual salary and sessions
                 total_cost     = annual_salary + sess_total
                 ann_v          = unit_cost if unit_cost != 0 else ''
                 ann_f          = fmt['mgmt_curr'] if ann_v != '' else fmt['mgmt_normal']
@@ -288,7 +306,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 ann_ref        = f'{_cl(C_ANN)}{er}+' if (C_ANN is not None and ann_v != '') else ''
                 mp_formula     = f'=B{er}*({ann_ref}{_cl(C_SQ)}{er}*{_cl(C_SP)}{er})'
             else:
-                # Salary-only FTE (or fully-zero FTE)
+                # Salary-only FTE (or fully-zero FTE, or sessions hidden because all-zero)
                 total_cost     = annual_salary
                 ann_v          = unit_cost if unit_cost != 0 else ''
                 ann_f          = fmt['mgmt_curr'] if ann_v != '' else fmt['mgmt_normal']
@@ -296,7 +314,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 if C_ANN is not None and ann_v != '':
                     mp_formula = f'=B{er}*{_cl(C_ANN)}{er}'
                 else:
-                    mp_formula = f'=0'
+                    mp_formula = '=0'
 
             # Suppress zero session count
             if sq_v == 0:
@@ -323,7 +341,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 0, r['שם שירות'],            fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_curr'])
             ws.write(row, 2, sh_unit_v,                 sh_unit_f)   # unit cost always in col C
-            if C_SQ > 2:   # 6-col: write blanks for D and E
+            if C_SQ is not None and C_SQ > 2:   # session cols exist beyond unit-cost col: write blanks
                 ws.write(row, C_SQ, '', fmt['mgmt_normal'])
                 ws.write(row, C_SP, '', fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, f'=B{er}*C{er}', fmt['mgmt_curr'], sh_tot)
@@ -787,28 +805,25 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
     wb = writer.book
     fmt = _add_formats(wb)
 
-    # ---- New sheets: CEO dashboard first, then scenario + growth -----------
-    create_dashboard_sheet(wb, fmt, df_flat, p_name, comments)
-    create_scenario_sheet(wb, fmt, df_flat, p_name)
-
-    # Growth sheet only when at least one revenue item has non-zero growth
-    _rev_m = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
-    if not _rev_m.empty:
-        _y1 = _rev_m['סה"כ נטו לכיס'].sum()
-        _growth_configured = (
-            abs(_rev_m['Net_Y2'].sum() - _y1) +
-            abs(_rev_m['Net_Y3'].sum() - _y1) +
-            abs(_rev_m['Net_Y4'].sum() - _y1)
-        ) > 0.01
-        if _growth_configured:
-            create_growth_sheet(wb, fmt, df_flat, p_name)
-
-    # Create management-friendly sheet so it appears after the new tabs
-    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap)
-
+    # ---- Compute visibility flags (used both for new tabs and for דוח כלכלי) -
     show_scenarios = not (
         (df_flat['Pct_Opt_Raw'] == 0).all() and (df_flat['Pct_Pess_Raw'] == 0).all()
     )
+    _rev_m = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    _y2_tot = _rev_m['Net_Y2'].sum() if not _rev_m.empty else 0
+    _y3_tot = _rev_m['Net_Y3'].sum() if not _rev_m.empty else 0
+    _y4_tot = _rev_m['Net_Y4'].sum() if not _rev_m.empty else 0
+    show_growth = (abs(_y2_tot) + abs(_y3_tot) + abs(_y4_tot)) > 0.01
+
+    # ---- New sheets: CEO dashboard first, then scenario + growth -----------
+    create_dashboard_sheet(wb, fmt, df_flat, p_name, comments)
+    if show_scenarios:
+        create_scenario_sheet(wb, fmt, df_flat, p_name)
+    if show_growth:
+        create_growth_sheet(wb, fmt, df_flat, p_name)
+
+    # Create management-friendly sheet so it appears after the new tabs
+    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap)
 
     ws = wb.add_worksheet('דוח כלכלי')
     ws.right_to_left()
