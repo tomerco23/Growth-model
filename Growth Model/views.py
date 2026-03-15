@@ -1080,6 +1080,7 @@ def show_report_view(  # noqa: C901
                 "✅ מומלץ" if profit_pess > 0 else "🛑 לא מומלץ",
                 st.session_state.general_comments, params,
                 include_cap=include_cap,
+                prof_opt=profit_opt,
             )
             writer.close()
             buf.seek(0)

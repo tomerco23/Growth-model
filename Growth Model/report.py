@@ -79,6 +79,21 @@ def _add_formats(wb) -> dict:
         'mgmt_sum_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
         'assump_pct': wb.add_format({'num_format': '0.0%', 'border': 2, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFF2CC', 'bold': True}),
         'assump_pct_ref': wb.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFF2CC'}),
+        # Scenario sheet formats
+        'scenario_pess_hdr': wb.add_format({'bold': True, 'bg_color': '#C0392B', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
+        'scenario_opt_hdr':  wb.add_format({'bold': True, 'bg_color': '#27AE60', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
+        'scenario_pess_val': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_color': '#C0392B', 'bold': True}),
+        'scenario_opt_val':  wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_color': '#27AE60', 'bold': True}),
+        'scenario_warn':     wb.add_format({'bold': True, 'bg_color': '#FDEBD0', 'font_color': '#E67E22', 'border': 1, 'align': 'right', 'valign': 'vcenter', 'text_wrap': True}),
+        'scenario_pct':      wb.add_format({'num_format': '+0.0%;-0.0%;0.0%', 'border': 1, 'align': 'center', 'valign': 'vcenter'}),
+        'scenario_profit_pos': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'bg_color': '#D5F5E3', 'font_color': '#1D8348'}),
+        'scenario_profit_neg': wb.add_format({'num_format': '#,##0', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'bg_color': '#FADBD8', 'font_color': '#922B21'}),
+        # Dashboard sheet formats
+        'dash_go':        wb.add_format({'bold': True, 'font_size': 24, 'font_color': 'white', 'bg_color': '#1E8449', 'align': 'center', 'valign': 'vcenter', 'border': 2}),
+        'dash_stop':      wb.add_format({'bold': True, 'font_size': 24, 'font_color': 'white', 'bg_color': '#C0392B', 'align': 'center', 'valign': 'vcenter', 'border': 2}),
+        'dash_kpi_label': wb.add_format({'bold': True, 'font_size': 10, 'font_color': '#7F8C8D', 'bg_color': '#F2F2F2', 'align': 'center', 'valign': 'vcenter', 'border': 1}),
+        'dash_kpi_val':   wb.add_format({'bold': True, 'font_size': 20, 'num_format': '#,##0', 'align': 'center', 'valign': 'vcenter', 'border': 1}),
+        'dash_kpi_roi':   wb.add_format({'bold': True, 'font_size': 20, 'num_format': '0.0', 'align': 'center', 'valign': 'vcenter', 'border': 1}),
     }
 
 
@@ -493,11 +508,302 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     ws.set_column('G:G', 14)   # extra
 
 
-def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True):
+# ---------------------------------------------------------------------------
+# Helper: compute scenario aggregates from df_flat
+# ---------------------------------------------------------------------------
+
+def _scenario_aggregates(df_flat):
+    """Return dicts {base, pess, opt} for revenue, manpower, operation, investment."""
+    rev_m  = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    mp_m   = df_flat[(df_flat['קטגוריה'] == 'Manpower') & (df_flat['Row_Type'] == 'Main')]
+    op_m   = df_flat[
+        (df_flat['קטגוריה'] == 'Operation') &
+        (df_flat['סוג'] != 'השקעה חד-פעמית') &
+        (df_flat['Row_Type'] != 'Session')
+    ]
+    inv_m  = df_flat[df_flat['סוג'] == 'השקעה חד-פעמית']
+
+    rev  = {'base': rev_m['סה"כ נטו לכיס'].sum(),   'pess': rev_m['תרחיש פסימי'].sum(),  'opt': rev_m['תרחיש אופטימי'].sum()}
+    mp   = {'base': abs(mp_m['סה"כ נטו לכיס'].sum()), 'pess': abs(mp_m['תרחיש פסימי'].sum()), 'opt': abs(mp_m['תרחיש אופטימי'].sum())}
+    op   = {'base': op_m['סה"כ נטו לכיס'].sum(),    'pess': op_m['תרחיש פסימי'].sum(),   'opt': op_m['תרחיש אופטימי'].sum()}
+    inv  = {'abs':  abs(inv_m['סה"כ נטו לכיס'].sum())}
+
+    # EBITDA = revenue - manpower + operations (operations are negative)
+    ebitda = {k: rev[k] - mp[k] + op[k] for k in ('base', 'pess', 'opt')}
+    profit = {k: ebitda[k] - inv['abs'] for k in ('base', 'pess', 'opt')}
+    roi    = (inv['abs'] / ebitda['base']) if (ebitda['base'] > 0 and inv['abs'] > 0) else 0
+
+    return rev, mp, op, inv, ebitda, profit, roi
+
+
+# ---------------------------------------------------------------------------
+# Sheet 1 (new): תרחישים – scenario comparison
+# ---------------------------------------------------------------------------
+
+def create_scenario_sheet(wb, fmt, df_flat, p_name):
+    """New tab 'תרחישים' – side-by-side pessimistic / base / optimistic.
+    Only non-zero rows are written (dynamic)."""
+    ws = wb.add_worksheet('תרחישים')
+    ws.right_to_left()
+    ws.hide_gridlines(2)
+
+    rev, mp, op, inv, ebitda, profit, roi = _scenario_aggregates(df_flat)
+
+    # Title
+    ws.set_row(0, 32)
+    ws.merge_range(0, 0, 0, 3, f'ניתוח תרחישים: {p_name}', fmt['mgmt_title_main'])
+
+    # Column headers
+    ws.set_row(1, 26)
+    ws.write(1, 0, 'מדד',         fmt['mgmt_header'])
+    ws.write(1, 1, '📉 פסימי',    fmt['scenario_pess_hdr'])
+    ws.write(1, 2, '📊 בסיס',     fmt['mgmt_header'])
+    ws.write(1, 3, '📈 אופטימי',  fmt['scenario_opt_hdr'])
+
+    def _pfmt(val, is_profit=False):
+        """Pick a format based on sign for profit rows, else standard."""
+        if is_profit:
+            return fmt['scenario_profit_pos'] if val >= 0 else fmt['scenario_profit_neg']
+        return fmt['mgmt_curr']
+
+    def _write(r, label, pess, base, opt_, is_profit=False, label_fmt=None):
+        """Write a 4-column row; skip entirely if all three values are zero."""
+        if base == 0 and pess == 0 and opt_ == 0:
+            return r
+        lf = label_fmt or (fmt['mgmt_profit_label'] if is_profit else fmt['mgmt_sum_label'])
+        ws.write(r, 0, label, lf)
+        ws.write(r, 1, pess  if pess  != 0 else '', fmt['scenario_pess_val'] if pess  != 0 else fmt['mgmt_normal'])
+        ws.write(r, 2, base,  _pfmt(base,  is_profit))
+        ws.write(r, 3, opt_   if opt_  != 0 else '', fmt['scenario_opt_val']  if opt_  != 0 else fmt['mgmt_normal'])
+        return r + 1
+
+    row = 2
+    row = _write(row, 'סה"כ הכנסות שנתיות',    rev['pess'],  rev['base'],    rev['opt'])
+    row = _write(row, 'סה"כ הוצאות כוח אדם',    mp['pess'],   mp['base'],     mp['opt'])
+    row = _write(row, 'סה"כ הוצאות תפעול',       abs(op['pess']), abs(op['base']), abs(op['opt']))
+    row += 1  # spacer
+    row = _write(row, 'רווח תפעולי (EBITDA)',    ebitda['pess'], ebitda['base'], ebitda['opt'], is_profit=True)
+    if inv['abs'] != 0:
+        # Investment is the same across scenarios (one-time cost shown in base column)
+        ws.write(row, 0, 'השקעה חד-פעמית',      fmt['mgmt_sum_label'])
+        ws.write(row, 1, '',                      fmt['mgmt_normal'])
+        ws.write(row, 2, -inv['abs'],             fmt['mgmt_curr'])
+        ws.write(row, 3, '',                      fmt['mgmt_normal'])
+        row += 1
+    row = _write(row, 'רווח כולל (בניכוי השקעה)', profit['pess'], profit['base'], profit['opt'], is_profit=True)
+
+    if inv['abs'] > 0 and roi > 0:
+        ws.write(row, 0, 'שנות החזר השקעה', fmt['mgmt_sum_label'])
+        ws.write(row, 2, roi,               fmt['mgmt_curr'])
+        row += 1
+
+    row += 1  # spacer before recommendation
+    rec_for = lambda v: '✅ מומלץ' if v > 0 else '🛑 לא מומלץ'
+    ws.write(row, 0, 'המלצה',               fmt['mgmt_sum_label'])
+    ws.write(row, 1, rec_for(profit['pess']), fmt['mgmt_curr'])
+    ws.write(row, 2, rec_for(profit['base']), fmt['mgmt_profit_val'])
+    ws.write(row, 3, rec_for(profit['opt']),  fmt['mgmt_curr'])
+    row += 2
+
+    # Zero tariff warnings for revenue items
+    rev_rows = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    zero_tar = rev_rows[rev_rows['תעריף יחידה ברוטו'] == 0]
+    if not zero_tar.empty:
+        ws.merge_range(row, 0, row, 3,
+            '⚠️ שירותים ללא תעריף – נא להזין מחיר ידנית:', fmt['scenario_warn'])
+        row += 1
+        for _, r in zero_tar.iterrows():
+            ws.merge_range(row, 0, row, 3,
+                f"  ›  שירות '{r['שם שירות']}' – אין מחיר בנתונים. חזרו לעריכה והזינו תעריף יחידה.",
+                fmt['scenario_warn'])
+            row += 1
+
+    ws.set_column('A:A', 34)
+    ws.set_column('B:D', 18)
+
+
+# ---------------------------------------------------------------------------
+# Sheet 2 (new): תחזית צמיחה – 4-year revenue projection
+# ---------------------------------------------------------------------------
+
+def create_growth_sheet(wb, fmt, df_flat, p_name):
+    """New tab 'תחזית צמיחה' – shows Y1-Y4 revenue per service.
+    Suppressed entirely if no growth rates are configured."""
+    ws = wb.add_worksheet('תחזית צמיחה')
+    ws.right_to_left()
+    ws.hide_gridlines(2)
+
+    rev_main = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')].copy()
+    if rev_main.empty:
+        ws.write(0, 0, 'אין נתוני הכנסות להצגה', fmt['mgmt_normal'])
+        ws.set_column('A:A', 40)
+        return
+
+    y1_tot = rev_main['סה"כ נטו לכיס'].sum()
+    y2_tot = rev_main['Net_Y2'].sum()
+    y3_tot = rev_main['Net_Y3'].sum()
+    y4_tot = rev_main['Net_Y4'].sum()
+    has_growth = (abs(y2_tot - y1_tot) + abs(y3_tot - y1_tot) + abs(y4_tot - y1_tot)) > 0.01
+
+    # Title
+    ws.set_row(0, 32)
+    ws.merge_range(0, 0, 0, 5, f'תחזית הכנסות 4 שנים: {p_name}', fmt['mgmt_title_main'])
+
+    if not has_growth:
+        ws.write(1, 0,
+            '⚠️ לא הוגדרו אחוזי צמיחה – כל השנים זהות לשנה 1. הגדר צמיחה בטופס ההכנסות.',
+            fmt['scenario_warn'])
+        ws.set_row(1, 28)
+        ws.set_column('A:A', 60)
+        return
+
+    # Headers
+    ws.set_row(1, 26)
+    for col_i, lbl in enumerate(['שם שירות', 'שנה 1 (₪)', 'שנה 2 (₪)', 'שנה 3 (₪)', 'שנה 4 (₪)', 'CAGR 4 שנים']):
+        ws.write(1, col_i, lbl, fmt['mgmt_header'])
+
+    row = 2
+    for _, r in rev_main.iterrows():
+        v1, v2, v3, v4 = r['סה"כ נטו לכיס'], r['Net_Y2'], r['Net_Y3'], r['Net_Y4']
+
+        # Skip fully-zero rows
+        if all(v == 0 for v in (v1, v2, v3, v4)):
+            continue
+
+        # Zero-tariff warning row
+        if r['תעריף יחידה ברוטו'] == 0:
+            ws.merge_range(row, 0, row, 5,
+                f"⚠️ שירות '{r['שם שירות']}' – אין מחיר בנתונים. נא להזין תעריף ידנית.",
+                fmt['scenario_warn'])
+            row += 1
+            continue
+
+        cagr = ((v4 / v1) ** (1 / 3) - 1) if (v1 > 0 and v4 > 0) else 0
+        ws.write(row, 0, r['שם שירות'], fmt['mgmt_normal'])
+        for col_i, val in enumerate((v1, v2, v3, v4), start=1):
+            ws.write(row, col_i, val if val != 0 else '',
+                     fmt['mgmt_curr'] if val != 0 else fmt['mgmt_normal'])
+        ws.write(row, 5, cagr, fmt['scenario_pct'])
+        row += 1
+
+    # Totals row
+    if row > 2:
+        ws.write(row, 0, 'סה"כ', fmt['mgmt_normal_bold'])
+        for col_i, tot in enumerate((y1_tot, y2_tot, y3_tot, y4_tot), start=1):
+            ws.write(row, col_i, tot if tot != 0 else '',
+                     fmt['mgmt_curr_bold'] if tot != 0 else fmt['mgmt_normal_bold'])
+        total_cagr = ((y4_tot / y1_tot) ** (1 / 3) - 1) if (y1_tot > 0 and y4_tot > 0) else 0
+        ws.write(row, 5, total_cagr, fmt['scenario_pct'])
+
+    ws.set_column('A:A', 35)
+    ws.set_column('B:F', 16)
+
+
+# ---------------------------------------------------------------------------
+# Sheet 3 (new): לוח מחוונים – executive dashboard
+# ---------------------------------------------------------------------------
+
+def create_dashboard_sheet(wb, fmt, df_flat, p_name, comments):
+    """New tab 'לוח מחוונים' – CEO-ready single-page summary.
+    Banner + KPI boxes + scenario strip + optional growth strip + comment."""
+    ws = wb.add_worksheet('לוח מחוונים')
+    ws.right_to_left()
+    ws.hide_gridlines(2)
+
+    rev, mp, op, inv, ebitda, profit, roi = _scenario_aggregates(df_flat)
+
+    # Row 0: Decision banner (height 60)
+    ws.set_row(0, 60)
+    is_rec  = profit['base'] > 0
+    b_fmt   = fmt['dash_go'] if is_rec else fmt['dash_stop']
+    b_text  = ('✅  ההחלטה מומלצת' if is_rec else '🛑  ההחלטה אינה מומלצת') + f'  |  {p_name}'
+    ws.merge_range(0, 0, 0, 5, b_text, b_fmt)
+
+    # Row 1: spacer
+    ws.set_row(1, 8)
+
+    # Rows 2-3: KPI boxes  [EBITDA | ROI | Investment]
+    ws.set_row(2, 22)
+    ws.set_row(3, 54)
+    kpi_defs = [
+        ('רווח תפעולי EBITDA (₪)', ebitda['base'], fmt['dash_kpi_val']),
+        ('שנות החזר השקעה (ROI)',   roi,            fmt['dash_kpi_roi']),
+        ('סה"כ השקעה חד-פעמית (₪)', inv['abs'],     fmt['dash_kpi_val']),
+    ]
+    kpi_cols = [(0, 1), (2, 3), (4, 5)]
+    for (c1, c2), (label, val, vfmt) in zip(kpi_cols, kpi_defs):
+        # Skip zero KPIs (except EBITDA which is always shown)
+        if val == 0 and label != 'רווח תפעולי EBITDA (₪)':
+            continue
+        ws.merge_range(2, c1, 2, c2, label, fmt['dash_kpi_label'])
+        ws.merge_range(3, c1, 3, c2, val,   vfmt)
+
+    # Row 4: spacer
+    ws.set_row(4, 8)
+
+    # Rows 5-6: Scenario strip
+    ws.set_row(5, 22)
+    ws.set_row(6, 44)
+    scen_defs = [
+        ('📉 פסימי',   ebitda['pess'], fmt['scenario_pess_hdr'], fmt['scenario_pess_val']),
+        ('📊 בסיס',    ebitda['base'], fmt['mgmt_header'],        fmt['dash_kpi_val']),
+        ('📈 אופטימי', ebitda['opt'],  fmt['scenario_opt_hdr'],  fmt['scenario_opt_val']),
+    ]
+    for (c1, c2), (label, val, hdr_f, val_f) in zip(kpi_cols, scen_defs):
+        ws.merge_range(5, c1, 5, c2, label, hdr_f)
+        ws.merge_range(6, c1, 6, c2, val if val != 0 else '', val_f if val != 0 else fmt['mgmt_normal'])
+
+    # Row 7: spacer
+    ws.set_row(7, 8)
+
+    # Rows 8-9: 4-year growth projection (only if growth configured)
+    rev_main = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    next_row = 8
+    if not rev_main.empty:
+        y1 = rev_main['סה"כ נטו לכיס'].sum()
+        y2 = rev_main['Net_Y2'].sum()
+        y3 = rev_main['Net_Y3'].sum()
+        y4 = rev_main['Net_Y4'].sum()
+        if (abs(y2 - y1) + abs(y3 - y1) + abs(y4 - y1)) > 0.01:
+            ws.set_row(8, 22)
+            ws.set_row(9, 44)
+            growth_labels = ['הכנסות שנה 1 (₪)', 'שנה 2 (₪)', 'שנה 3 (₪)', 'שנה 4 (₪)']
+            growth_vals   = [y1, y2, y3, y4]
+            for (c1, c2), lbl, val in zip([(0, 1), (2, 2), (3, 4), (5, 5)], growth_labels, growth_vals):
+                ws.merge_range(8, c1, 8, c2, lbl,                    fmt['mgmt_header'])
+                ws.merge_range(9, c1, 9, c2, val if val != 0 else '', fmt['dash_kpi_val'] if val != 0 else fmt['mgmt_normal'])
+            next_row = 11
+
+    # Comment snippet (first 150 chars)
+    if comments:
+        snippet = comments[:150] + ('...' if len(comments) > 150 else '')
+        ws.set_row(next_row, 24)
+        ws.merge_range(next_row, 0, next_row, 5, f'📝 {snippet}', fmt['text_box'])
+
+    ws.set_column('A:F', 16)
+
+
+def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True, prof_opt=0):
     wb = writer.book
     fmt = _add_formats(wb)
 
-    # Create management-friendly sheet first so it appears as the first tab
+    # ---- New sheets: CEO dashboard first, then scenario + growth -----------
+    create_dashboard_sheet(wb, fmt, df_flat, p_name, comments)
+    create_scenario_sheet(wb, fmt, df_flat, p_name)
+
+    # Growth sheet only when at least one revenue item has non-zero growth
+    _rev_m = df_flat[(df_flat['קטגוריה'] == 'Revenue') & (df_flat['Row_Type'] == 'Main')]
+    if not _rev_m.empty:
+        _y1 = _rev_m['סה"כ נטו לכיס'].sum()
+        _growth_configured = (
+            abs(_rev_m['Net_Y2'].sum() - _y1) +
+            abs(_rev_m['Net_Y3'].sum() - _y1) +
+            abs(_rev_m['Net_Y4'].sum() - _y1)
+        ) > 0.01
+        if _growth_configured:
+            create_growth_sheet(wb, fmt, df_flat, p_name)
+
+    # Create management-friendly sheet so it appears after the new tabs
     create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap)
 
     show_scenarios = not (
