@@ -172,11 +172,13 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     no_show_g = params.get('NO_SHOW_RATE', 0)
     overhead  = params.get('OVERHEAD_RATE', 0)
     cap_f     = params.get('CAP_RATE_FACTOR', 0)
+    employer_f = params.get('EMPLOYER_FACTOR', 1.31)
 
     # ---- Assumption cell positions (cols E-F, rows 2-6) -----------------
     # VOL → $F$3, APP → $F$4, NS → $F$5, OVH → $F$6, CAP → $F$7
     VOL_ROW, APP_ROW          = 2, 3
     NS_ROW,  OVH_ROW, CAP_ROW = 4, 5, 6
+    EMP_ROW                  = 7
     AL, AC = 4, 5   # assumption label col (E=4), value col (F=5)
     vol_ref = '$F$3'
     app_ref = '$F$4'
@@ -225,6 +227,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     ]:
         ws.write(ar, AL, label, fmt['assumption_box'])
         ws.write(ar, AC, val,   fmt['assump_pct'])
+    ws.write(EMP_ROW, AL, 'עלות מעביד', fmt['assumption_box'])
+    ws.write(EMP_ROW, AC, f'×{employer_f:.2f}', fmt['assump_pct'])
 
     # ---- Detail sections (written first to capture total row positions) -
     row = 11  # start below summary/assumption area
@@ -315,8 +319,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         if has_annual_cost and has_sessions:
             # 6 cols: name | FTEs | annual | sess_qty | sess_price | total
             mp_headers = ['שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)',
-                          'כמות ססיות לתקן', 'מחיר ססייה (₪)', 'סה"כ עלות (₪)']
-            C_ANN, C_SQ, C_SP, C_TOT = 2, 3, 4, 5
+                          'כמות ססיות לתקן', 'עלות ססיה ברוטו (₪)', 'עלות מעביד ססיה (₪)', 'סה"כ עלות (₪)']
+            C_ANN, C_SQ, C_SP_GROSS, C_SP_EMP, C_TOT = 2, 3, 4, 5, 6
         elif has_annual_cost:
             # 4 cols: name | FTEs | annual/unit | total  (session cols removed)
             mp_headers = ['שם / תפקיד', 'תקנים', 'עלות שנתית לתקן (₪)', 'סה"כ עלות (₪)']
@@ -324,8 +328,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         elif has_sessions:
             # 5 cols: name | FTEs/qty | sess_qty | sess_price | total  (annual col removed)
             mp_headers = ['שם / תפקיד', 'תקנים',
-                          'כמות ססיות לתקן', 'מחיר ססייה (₪)', 'סה"כ עלות (₪)']
-            C_ANN, C_SQ, C_SP, C_TOT = None, 2, 3, 4
+                          'כמות ססיות לתקן', 'עלות ססיה ברוטו (₪)', 'עלות מעביד ססיה (₪)', 'סה"כ עלות (₪)']
+            C_ANN, C_SQ, C_SP_GROSS, C_SP_EMP, C_TOT = None, 2, 3, 4, 5
         else:
             # 3 cols: name | FTEs/qty | total  (all amounts zero — both cols hidden)
             mp_headers = ['שם / תפקיד', 'תקנים', 'סה"כ עלות (₪)']
@@ -344,8 +348,9 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             er             = row + 1
             annual_salary  = abs(r['סה"כ נטו לכיס'])
             sess_qty       = r['כמות שירותי ססיה']
-            sess_cost_unit = r['עלות ססיה']
-            sess_total     = sess_qty * sess_cost_unit
+            sess_cost_gross = r['עלות ססיה ברוטו']
+            sess_cost_emp   = r['עלות מעביד ססיה']
+            sess_total      = sess_qty * sess_cost_emp
             fte_count      = max(float(r['כמות שירותים רגילים']), 1)
             unit_cost      = r['עלות לשירות']
             sess_per_fte   = sess_qty / fte_count if fte_count else 0
@@ -355,23 +360,25 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
                 total_cost     = sess_total
                 ann_v, ann_f   = '', fmt['mgmt_normal']
                 sq_v           = int(sess_per_fte)
-                sp_v           = sess_cost_unit
-                mp_formula     = f'=B{er}*{_cl(C_SQ)}{er}*{_cl(C_SP)}{er}'
+                sp_gross_v     = sess_cost_gross
+                sp_emp_v       = sess_cost_emp
+                mp_formula     = f'=B{er}*{_cl(C_SQ)}{er}*{_cl(C_SP_EMP)}{er}'
             elif sess_total > 0 and C_SQ is not None:
                 # Both annual salary and sessions
                 total_cost     = annual_salary + sess_total
                 ann_v          = unit_cost if unit_cost != 0 else ''
                 ann_f          = fmt['mgmt_curr'] if ann_v != '' else fmt['mgmt_normal']
                 sq_v           = int(sess_per_fte)
-                sp_v           = sess_cost_unit
+                sp_gross_v     = sess_cost_gross
+                sp_emp_v       = sess_cost_emp
                 ann_ref        = f'{_cl(C_ANN)}{er}+' if (C_ANN is not None and ann_v != '') else ''
-                mp_formula     = f'=B{er}*({ann_ref}{_cl(C_SQ)}{er}*{_cl(C_SP)}{er})'
+                mp_formula     = f'=B{er}*({ann_ref}{_cl(C_SQ)}{er}*{_cl(C_SP_EMP)}{er})'
             else:
                 # Salary-only FTE (or fully-zero FTE, or sessions hidden because all-zero)
                 total_cost     = annual_salary
                 ann_v          = unit_cost if unit_cost != 0 else ''
                 ann_f          = fmt['mgmt_curr'] if ann_v != '' else fmt['mgmt_normal']
-                sq_v, sp_v     = '', ''
+                sq_v, sp_gross_v, sp_emp_v = '', '', ''
                 if C_ANN is not None and ann_v != '':
                     mp_formula = f'=B{er}*{_cl(C_ANN)}{er}'
                 else:
@@ -380,7 +387,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             # Suppress zero session count
             if sq_v == 0:
                 sq_v = ''
-                sp_v = ''
+                sp_gross_v = ''
+                sp_emp_v   = ''
 
             ws.write(row, 0, r['שם שירות'],            fmt['mgmt_normal'])
             ws.write(row, 1, r['כמות שירותים רגילים'], fmt['mgmt_curr'])
@@ -389,9 +397,11 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             if C_SQ is not None:
                 ws.write(row, C_SQ, sq_v,
                          fmt['mgmt_curr'] if sq_v != '' else fmt['mgmt_normal'])
-            if C_SP is not None:
-                ws.write(row, C_SP, sp_v,
-                         fmt['mgmt_curr'] if sp_v != '' else fmt['mgmt_normal'])
+            if C_SP_GROSS is not None:
+                ws.write(row, C_SP_GROSS, sp_gross_v,
+                         fmt['mgmt_curr'] if sp_gross_v != '' else fmt['mgmt_normal'])
+                ws.write(row, C_SP_EMP, sp_emp_v,
+                         fmt['mgmt_curr'] if sp_emp_v != '' else fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, mp_formula, fmt['mgmt_curr'], total_cost)
             s_mp += total_cost; row += 1
 
@@ -406,7 +416,8 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, 2, sh_unit_v,                 sh_unit_f)   # unit cost always in col C
             if C_SQ is not None and C_SQ > 2:   # session cols exist beyond unit-cost col: write blanks
                 ws.write(row, C_SQ, '', fmt['mgmt_normal'])
-                ws.write(row, C_SP, '', fmt['mgmt_normal'])
+                ws.write(row, C_SP_GROSS, '', fmt['mgmt_normal'])
+                ws.write(row, C_SP_EMP,   '', fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, f'=B{er}*C{er}', fmt['mgmt_curr'], sh_tot)
             s_mp += sh_tot; row += 1
 
@@ -970,10 +981,10 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         df_mp_shift = df_manpower[df_manpower['Calc_Mode'].isin(['Daily', 'Hourly'])]
 
         if not df_mp_std.empty:
-            has_sessions = (df_mp_std['כמות שירותי ססיה'] * df_mp_std['עלות ססיה']).sum() > 0
+            has_sessions = (df_mp_std['כמות שירותי ססיה'] * df_mp_std['עלות ססיה ברוטו']).sum() > 0
             mp_headers = ["תפקיד / משרה", "עלות שנתית למשרה", "תקנים (FTE)", "סה\"כ עלות בסיס (ללא ססיות)"]
             if has_sessions:
-                mp_headers += ["כמות ססיה (שנתי)", "עלות ססיה"]
+                mp_headers += ["כמות ססיה (שנתי)", "עלות ססיה ברוטו", "עלות מעביד ססיה"]
             mp_headers.append("סה\"כ עלות כוללת")
             if show_scenarios:
                 mp_headers += ["סה\"כ אופטימי", "סה\"כ פסימי"]
@@ -990,9 +1001,10 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
                 fte = row['כמות שירותים רגילים']
                 unit_cost = row['עלות לשירות']
                 sess_vol = row['כמות שירותי ססיה']
-                sess_price = row['עלות ססיה']
-                total_sess = sess_vol * sess_price
-                total_combined = base_cost + total_sess
+                sess_price_gross = row['עלות ססיה ברוטו']
+                sess_price_emp   = row['עלות מעביד ססיה']
+                total_sess       = sess_vol * sess_price_emp
+                total_combined   = base_cost + total_sess
                 c_idx = 0
 
                 ws.write(row_idx, c_idx, row['שם שירות'], fmt['normal']); c_idx += 1
@@ -1001,7 +1013,8 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
                 ws.write(row_idx, c_idx, base_cost, fmt['curr']); c_idx += 1
                 if has_sessions:
                     ws.write(row_idx, c_idx, sess_vol, fmt['normal']); c_idx += 1
-                    ws.write(row_idx, c_idx, sess_price, fmt['curr']); c_idx += 1
+                    ws.write(row_idx, c_idx, sess_price_gross, fmt['curr']); c_idx += 1
+                    ws.write(row_idx, c_idx, sess_price_emp, fmt['curr']); c_idx += 1
                 ws.write(row_idx, c_idx, total_combined, fmt['curr']); c_idx += 1
                 if show_scenarios:
                     ws.write(row_idx, c_idx, total_combined * (row['Pct_Opt_Raw'] / 100), fmt['curr']); c_idx += 1
@@ -1009,7 +1022,7 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
                 s_base_total += total_combined
                 row_idx += 1
 
-            total_col = 4 + (2 if has_sessions else 0)
+            total_col = 4 + (3 if has_sessions else 0)
             ws.write(row_idx, 0, "סה\"כ כוח אדם רגיל", fmt['normal_bold'])
             ws.write(row_idx, total_col, s_base_total, fmt['curr_bold'])
             row_idx += 2

@@ -322,7 +322,7 @@ def update_model_from_editor():
                 item['Sessions'] = safe_val / 12 if is_manpower else None
                 if not is_manpower:
                     item['Rev_Sess_Vol'] = safe_val
-            elif col == "עלות ססיה":
+            elif col == "עלות ססיה ברוטו":
                 if is_manpower:
                     item['Sess_Price'] = safe_val
                 else:
@@ -408,7 +408,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                         on_change=lambda: st.session_state.update({'manpower_form_cost': st.session_state.manpower_form_input}),
                     )
                     c2.number_input("ססיות בחודש", 0.0, 200.0, 0.0, key="hr_sess")
-                    c2.number_input("מחיר ססיה", 0.0, 10000.0, 0.0, format="%.0f", key="hr_sess_price")
+                    c2.number_input("עלות ססיה ברוטו", 0.0, 10000.0, 0.0, format="%.0f", key="hr_sess_price")
                     c3, c4 = st.columns(2)
                     c3.number_input("תרחיש אופטימי (שכר %)", 0, 200, 0, key="hr_opt")
                     c4.number_input("תרחיש פסימי (שכר %)", 0, 200, 0, key="hr_pess")
@@ -516,7 +516,7 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         st.markdown("**הגדרת ססיות לשירות (אופציונלי - למידע בלבד):**")
         c_sess_v, c_sess_p = st.columns(2)
         c_sess_v.number_input("כמות ססיות נדרשת לשירות זה (שנתי)", 0, 10000, 0, key="srv_sess_vol")
-        c_sess_p.number_input("עלות ססיה", 0.0, 10000.0, 0.0, format="%.0f", key="srv_sess_cost")
+        c_sess_p.number_input("עלות ססיה ברוטו", 0.0, 10000.0, 0.0, format="%.0f", key="srv_sess_cost")
         st.markdown("**תחזית צמיחה (לעומת שנה קודמת):**")
         col_g2, col_g3, col_g4 = st.columns(3)
         col_g2.number_input("שנה 2 (לעומת שנה 1) %", value=0.0, step=1.0, key="srv_g2")
@@ -550,14 +550,14 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
         editable_df.reset_index(drop=True, inplace=True)
         # Task 7: computed column – session annual cost per line item
         editable_df['עלות ססיות שנתית'] = (
-            editable_df['כמות שירותי ססיה'] * editable_df['עלות ססיה']
+            editable_df['כמות שירותי ססיה'] * editable_df['עלות מעביד ססיה']
         )
         st.session_state['latest_df_flat_mapping'] = dict(zip(editable_df.index, editable_df['Item_Index']))
 
         cols_order = [
             'Delete', 'Item_Index', 'Category_Heb', 'שם שירות',
             'כמות שירותים רגילים', 'עלות לשירות', 'כמות שירותי ססיה',
-            'עלות ססיה', 'עלות ססיות שנתית', 'תעריף יחידה ברוטו', 'Pct_Opt_Raw', 'Pct_Pess_Raw',
+            'עלות ססיה ברוטו', 'עלות מעביד ססיה', 'עלות ססיות שנתית', 'תעריף יחידה ברוטו', 'Pct_Opt_Raw', 'Pct_Pess_Raw',
         ]
         if 'Lifespan' in df_flat.columns:
             cols_order.append('Lifespan')
@@ -572,7 +572,8 @@ def show_edit_view(df_hr, df_srv_hier, df_srv_prices, h_hr, h_srv, k_hr, k_srv, 
                 "כמות שירותים רגילים": st.column_config.NumberColumn("כמות", format="%.2f"),
                 "עלות לשירות": st.column_config.NumberColumn("עלות יחידה (₪)", format="%.0f"),
                 "כמות שירותי ססיה": st.column_config.NumberColumn("ססיות (שנתי)", format="%.0f"),
-                "עלות ססיה": st.column_config.NumberColumn("עלות ססיה (₪)", format="%.0f"),
+                "עלות ססיה ברוטו": st.column_config.NumberColumn("עלות ססיה ברוטו (₪)", format="%.0f"),
+                "עלות מעביד ססיה": st.column_config.NumberColumn("עלות מעביד ססיה (₪)", format="%.0f", disabled=True),
                 "עלות ססיות שנתית": st.column_config.NumberColumn("עלות ססיות שנ' (₪)", format="%.0f", disabled=True),
                 "תעריף יחידה ברוטו": st.column_config.NumberColumn("תעריף ברוטו (₪)", format="%.0f"),
                 "Pct_Opt_Raw": st.column_config.NumberColumn("אופטימי %", format="%d%%"),

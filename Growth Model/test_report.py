@@ -19,31 +19,31 @@ def make_df():
         # Manpower FTE with salary
         {'קטגוריה': 'Manpower', 'סוג': 'כ"א', 'Row_Type': 'FTE', 'Calc_Mode': 'FTE',
          'שם שירות': 'רופא', 'כמות שירותים רגילים': 2, 'עלות לשירות': 200000,
-         'כמות שירותי ססיה': 0, 'עלות ססיה': 0,
+         'כמות שירותי ססיה': 0, 'עלות ססיה ברוטו': 0, 'עלות מעביד ססיה': 0,
          'סה"כ נטו לכיס': -400000, 'סה"כ ברוטו': 0, 'סה"כ אחרי קאפ': 0,
          'Pct_Opt_Raw': 0, 'Pct_Pess_Raw': 0},
         # Manpower FTE – sessions only, no salary
         {'קטגוריה': 'Manpower', 'סוג': 'כ"א', 'Row_Type': 'FTE', 'Calc_Mode': 'FTE',
          'שם שירות': 'מומחה', 'כמות שירותים רגילים': 1, 'עלות לשירות': 0,
-         'כמות שירותי ססיה': 50, 'עלות ססיה': 300,
+         'כמות שירותי ססיה': 50, 'עלות ססיה ברוטו': 300, 'עלות מעביד ססיה': 393,
          'סה"כ נטו לכיס': 0, 'סה"כ ברוטו': 0, 'סה"כ אחרי קאפ': 0,
          'Pct_Opt_Raw': 0, 'Pct_Pess_Raw': 0},
         # Session row – must NOT appear in operations section
         {'קטגוריה': 'Operation', 'סוג': 'תפעול', 'Row_Type': 'Session',
          'שם שירות': 'ססיות - מומחה', 'כמות שירותים רגילים': 50, 'עלות לשירות': 300,
-         'כמות שירותי ססיה': 0, 'עלות ססיה': 0,
+         'כמות שירותי ססיה': 0, 'עלות ססיה ברוטו': 0, 'עלות מעביד ססיה': 0,
          'סה"כ נטו לכיס': -15000, 'סה"כ ברוטו': 0, 'סה"כ אחרי קאפ': 0,
          'Pct_Opt_Raw': 0, 'Pct_Pess_Raw': 0},
         # Operations
         {'קטגוריה': 'Operation', 'סוג': 'תפעול', 'Row_Type': 'Operation',
          'שם שירות': 'ציוד', 'כמות שירותים רגילים': 1, 'עלות לשירות': 30000,
-         'כמות שירותי ססיה': 0, 'עלות ססיה': 0,
+         'כמות שירותי ססיה': 0, 'עלות ססיה ברוטו': 0, 'עלות מעביד ססיה': 0,
          'סה"כ נטו לכיס': -30000, 'סה"כ ברוטו': 0, 'סה"כ אחרי קאפ': 0,
          'Pct_Opt_Raw': 0, 'Pct_Pess_Raw': 0},
         # Investment
         {'קטגוריה': 'Operation', 'סוג': 'השקעה חד-פעמית', 'Row_Type': 'Investment',
          'שם שירות': 'מכשיר', 'כמות שירותים רגילים': 1, 'עלות לשירות': 100000,
-         'כמות שירותי ססיה': 0, 'עלות ססיה': 0,
+         'כמות שירותי ססיה': 0, 'עלות ססיה ברוטו': 0, 'עלות מעביד ססיה': 0,
          'סה"כ נטו לכיס': -100000, 'סה"כ ברוטו': 0, 'סה"כ אחרי קאפ': 0,
          'Lifespan': 10, 'Pct_Opt_Raw': 0, 'Pct_Pess_Raw': 0},
     ])
@@ -66,7 +66,7 @@ def test_session_only_manpower():
     df = make_df()
     row = df[df['שם שירות'] == 'מומחה'].iloc[0]
     annual_salary = abs(row['סה"כ נטו לכיס'])
-    sess_total = row['כמות שירותי ססיה'] * row['עלות ססיה']
+    sess_total = row['כמות שירותי ססיה'] * row['עלות ססיה ברוטו']
     assert annual_salary == 0, "Expected 0 annual salary for session-only row"
     assert sess_total == 15000, f"Expected 15000 session total, got {sess_total}"
     print(f"PASS: Session-only manpower detected, sess_total={sess_total:,}")
@@ -88,7 +88,7 @@ def test_generate_excel():
     df = make_df().fillna(0)
     params = {
         'HMO_DISCOUNT': 0.185, 'VOL_DISCOUNT': 0.019, 'APPEALS_PROV': 0.04,
-        'NO_SHOW_RATE': 0.0,   'OVERHEAD_RATE': 0.29,  'CAP_RATE_FACTOR': 0.35,
+        'NO_SHOW_RATE': 0.0,   'OVERHEAD_RATE': 0.29,  'CAP_RATE_FACTOR': 0.35, 'EMPLOYER_FACTOR': 1.31,
     }
     buf = io.BytesIO()
     writer = pd.ExcelWriter(buf, engine='xlsxwriter')
