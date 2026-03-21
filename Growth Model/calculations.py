@@ -179,7 +179,11 @@ def calculate_detailed_rows(items: list, params: dict):
             qty_net = qty * (1 - active_no_show) * (0.93 if item.get('Is_New') else 1.0)
             u_gross = item.get('Unit_Revenue') or 0.0
 
-            global_discount_factor = 1 - (params['VOL_DISCOUNT'] + params['APPEALS_PROV'])
+            combined_discount = (
+                params['VOL_DISCOUNT'] + params['APPEALS_PROV']
+                + params['OVERHEAD_RATE']
+            )
+            global_discount_factor = 1 - combined_discount
             active_discount_factor = (
                 1 - (item.get('Manual_Discount_Pct') / 100.0)
                 if item.get('Manual_Discount_Pct') is not None
@@ -187,17 +191,13 @@ def calculate_detailed_rows(items: list, params: dict):
             )
 
             if item.get('Is_Private'):
-                u_net = u_gross
-                u_cap = u_gross
+                u_final = u_gross
             else:
-                u_net = u_gross * active_discount_factor
-                u_cap = u_gross * params['CAP_RATE_FACTOR']
+                u_final = u_gross * active_discount_factor * params['CAP_RATE_FACTOR']
 
-            tot_gross = qty_net * u_gross
-            tot_net = qty_net * u_net
-            tot_cap = qty_net * u_cap
-            ovh_cost = tot_net * params['OVERHEAD_RATE']
-            net_pocket = tot_net - ovh_cost
+            tot_gross  = qty_net * u_gross
+            tot_cap    = qty_net * u_final
+            net_pocket = qty_net * u_final
 
             val_base = net_pocket
             total_rev += val_base
@@ -218,12 +218,12 @@ def calculate_detailed_rows(items: list, params: dict):
                 "שם שירות": srv_name,
                 "קוד שירות": code,
                 "תעריף יחידה ברוטו": u_gross,
-                "תעריף יחידה אחרי הנחות": u_net,
-                "תעריף יחידה תחת cap": u_cap,
+                "תעריף יחידה אחרי הנחות": u_final,
+                "תעריף יחידה תחת cap": u_final,
                 'סה"כ ברוטו': tot_gross,
-                'סה"כ אחרי הנחות': tot_net,
+                'סה"כ אחרי הנחות': tot_cap,
                 'סה"כ אחרי קאפ': tot_cap,
-                "עלות תקורה": ovh_cost,
+                "עלות תקורה": 0,
                 'סה"כ נטו לכיס': val_base,
                 "תרחיש אופטימי": val_base * pct_opt_val,
                 "תרחיש פסימי": val_base * pct_pess_val,
