@@ -1,47 +1,68 @@
 import io
 import pandas as pd
 
-from utils import format_number_str, is_html, html_to_png_bytes, strip_html, html_to_plain_text
+from utils import format_number_str, is_html, html_to_png_bytes, strip_html, html_to_plain_text, html_to_paragraphs
 
 
 # ---------------------------------------------------------------------------
 # Comments embedding helper (rich-text HTML → PNG image, or plain-text fallback)
 # ---------------------------------------------------------------------------
 
-def _embed_comments_image(ws, row: int, col: int, comments: str, align: str = 'right') -> None:
-    """Embed the economist's comments block into *ws* at (row, col).
-
-    • If *comments* is Quill HTML  → render to PNG via Playwright, insert_image.
-    • If Playwright fails or text is plain → insert_textbox fallback.
-    • If the HTML is empty (Quill default '<p><br></p>') → do nothing.
+def _write_comment_cells(ws, wb, row: int, comments: str, default_align: str = 'right') -> None:
+    """Write Quill HTML comments as per-paragraph Excel cells.
+    Each paragraph: alignment from Quill class, bold+size for headings,
+    reading_order=2 for correct Hebrew+English BiDi, yellow background.
+    Format cache avoids duplicate xlsxwriter format objects.
     """
-    # Guard: ignore empty Quill state
+    if is_html(comments):
+        paragraphs = html_to_paragraphs(comments, default_align=default_align)
+    else:
+        paragraphs = [
+            {'text': line, 'align': default_align, 'bold': False, 'size': 11}
+            for line in html_to_plain_text(comments).split(chr(10)) if line.strip()
+        ]
+    if not paragraphs:
+        return
+    LAST_COL = 9
+    fmt_cache = {}
+    for para in paragraphs:
+        key = (para['align'], para['bold'], para['size'])
+        if key not in fmt_cache:
+            fmt_cache[key] = wb.add_format({
+                'font_name':     'Arial',
+                'font_size':     para['size'],
+                'bold':          para['bold'],
+                'align':         para['align'],
+                'valign':        'vcenter',
+                'bg_color':      '#FFFFCC',
+                'text_wrap':     True,
+                'reading_order': 2,
+            })
+        ws.merge_range(row, 0, row, LAST_COL, para["text"], fmt_cache[key])
+        ws.set_row(row, max(20, para["size"] * 2))
+        row += 1
+
+
+def _embed_comments_image(ws, wb, row: int, col: int, comments: str, align: str = 'right') -> None:
+    """Embed the economist comments block.
+    1. Playwright PNG if available (perfect Quill rendering).
+    2. Per-paragraph cell rendering (correct alignment + Hebrew/English BiDi).
+    """
     if not comments or not strip_html(comments).strip():
         return
-
     if is_html(comments):
         try:
             png = html_to_png_bytes(comments, width_px=680)
             ws.insert_image(row, col, 'comments.png', {
                 'image_data':      io.BytesIO(png),
-                'object_position': 2,   # move with cells, don't resize
+                'object_position': 2,
                 'x_scale':         1.0,
                 'y_scale':         1.0,
             })
             return
         except Exception:
-            comments = html_to_plain_text(comments)   # fall through to textbox
-
-    # Plain-text fallback
-    _rtl = any('\u0590' <= c <= '\u05FF' for c in comments)
-    ws.insert_textbox(row, col, comments, {
-        'width':           620,
-        'height':          180,
-        'font':            {'name': 'Arial', 'size': 11},
-        'align':           {'vertical': 'top', 'horizontal': align},
-        'text_direction':  'rtl' if _rtl else 'ltr',
-        'object_position': 2,
-    })
+            pass
+    _write_comment_cells(ws, wb, row, comments, default_align=align)
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +480,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         for _r in range(row, row + 10):
             ws.set_row(_r, 18)
-        _embed_comments_image(ws, row, 0, comments, align=comment_align)
+        _embed_comments_image(ws, wb, row, 0, comments, align=comment_align)
         row += 10
 
     # ---- Compute Python fallback values for summary ---------------------
@@ -1089,7 +1110,7 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         row_idx += 1
         for _r in range(row_idx, row_idx + 8):
             ws.set_row(_r, 20)
-        _embed_comments_image(ws, row_idx, 0, comments, align=comment_align)
+        _embed_comments_image(ws, wb, row_idx, 0, comments, align=comment_align)
 
     ws.set_column('A:A', 35)
     ws.set_column('B:K', 18)

@@ -1076,15 +1076,6 @@ def show_report_view(  # noqa: C901
         if _quill_val is not None:
             st.session_state['general_comments'] = _quill_val
 
-        _align_map = {'ימין': 'right', 'מרכז': 'center', 'שמאל': 'left'}
-        _align_label = st.radio(
-            'יישור טקסט בדו"ח',
-            options=list(_align_map.keys()),
-            index=0,
-            horizontal=True,
-            key='comment_align_label',
-        )
-        st.session_state['comment_align'] = _align_map[_align_label]
 
     with c2:
         include_cap = st.checkbox(
@@ -1105,7 +1096,6 @@ def show_report_view(  # noqa: C901
                 st.session_state.general_comments, params,
                 include_cap=include_cap,
                 prof_opt=profit_opt,
-                comment_align=st.session_state.get('comment_align', 'right'),
             )
             writer.close()
             buf.seek(0)

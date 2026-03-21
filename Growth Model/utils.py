@@ -58,6 +58,54 @@ def html_to_plain_text(html: str) -> str:
     return text.strip()
 
 
+
+_QUILL_ALIGN = {
+    'ql-align-center':  'center',
+    'ql-align-left':    'left',
+    'ql-align-right':   'right',
+    'ql-align-justify': 'justify',
+}
+_TAG_SIZE = {'h1': 18, 'h2': 15, 'h3': 13}
+
+
+def html_to_paragraphs(html: str, default_align: str = 'right') -> list:
+    """Parse Quill HTML into a list of paragraph dicts for Excel cell rendering.
+
+    Each dict: {text, align, bold, size}
+    - align  : 'right' | 'center' | 'left' | 'justify'
+    - bold   : True for headings or <strong>/<b> content
+    - size   : 18/15/13 for h1/h2/h3, 11 for body
+    Preserves per-paragraph alignment so mixed RTL/LTR renders correctly.
+    """
+    result = []
+    for m in re.finditer(r'<(h[1-6]|p|li)([^>]*)>(.*?)</[a-z0-9]+>', html, re.IGNORECASE | re.DOTALL):
+        tag   = m.group(1).lower()
+        attrs = m.group(2)
+        inner = m.group(3)
+
+        # Alignment from Quill class
+        align = default_align
+        cls_m = re.search(r'class="([^"]*)"', attrs)
+        if cls_m:
+            for cls in cls_m.group(1).split():
+                if cls in _QUILL_ALIGN:
+                    align = _QUILL_ALIGN[cls]
+                    break
+
+        # Bold / size from tag type or inline strong
+        is_heading = tag.startswith('h') and len(tag) == 2
+        size = _TAG_SIZE.get(tag, 11)
+        bold = is_heading or bool(re.search(r'<(strong|b)[^a-z]', inner, re.IGNORECASE))
+
+        # Plain text (strip inner tags, decode entities, clean spaces)
+        text = re.sub(r'<[^>]+>', '', inner)
+        text = _html_mod.unescape(text).replace(chr(160), chr(32)).strip()
+
+        if text:
+            result.append({'text': text, 'align': align, 'bold': bold, 'size': size})
+    return result
+
+
 def _render_html_sync(html: str, width_px: int) -> bytes:
     """Internal: render HTML to PNG bytes using Playwright (called in a thread)."""
     from playwright.sync_api import sync_playwright  # noqa: PLC0415
