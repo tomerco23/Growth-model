@@ -8,7 +8,7 @@ from utils import format_number_str, is_html, html_to_png_bytes, strip_html, htm
 # Comments embedding helper (rich-text HTML → PNG image, or plain-text fallback)
 # ---------------------------------------------------------------------------
 
-def _embed_comments_image(ws, row: int, col: int, comments: str) -> None:
+def _embed_comments_image(ws, row: int, col: int, comments: str, align: str = 'right') -> None:
     """Embed the economist's comments block into *ws* at (row, col).
 
     • If *comments* is Quill HTML  → render to PNG via Playwright, insert_image.
@@ -38,8 +38,7 @@ def _embed_comments_image(ws, row: int, col: int, comments: str) -> None:
         'width':           620,
         'height':          180,
         'font':            {'name': 'Arial', 'size': 11},
-        'align':           {'vertical': 'top',
-                            'horizontal': 'right' if _rtl else 'left'},
+        'align':           {'vertical': 'top', 'horizontal': align},
         'text_direction':  'rtl' if _rtl else 'ltr',
         'object_position': 2,
     })
@@ -139,7 +138,7 @@ def _add_formats(wb) -> dict:
     }
 
 
-def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True):
+def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True, comment_align='right'):
     """Management report: fixed assumption cells, all revenue cells use Excel formulas.
     Formula: u_gross * (1 - (VOL+APPEALS+OVERHEAD)) * CAP_RATE_FACTOR.
     include_cap kept for API compatibility but ignored internally."""
@@ -460,7 +459,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
         row += 1
         for _r in range(row, row + 10):
             ws.set_row(_r, 18)
-        _embed_comments_image(ws, row, 0, comments)
+        _embed_comments_image(ws, row, 0, comments, align=comment_align)
         row += 10
 
     # ---- Compute Python fallback values for summary ---------------------
@@ -748,7 +747,7 @@ def create_growth_sheet(wb, fmt, df_flat, p_name):
     ws.set_column('B:F', 16)
 
 
-def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True, prof_opt=0):
+def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True, prof_opt=0, comment_align='right'):
     wb = writer.book
     fmt = _add_formats(wb)
 
@@ -773,7 +772,7 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         create_growth_sheet(wb, fmt, df_flat, p_name)
 
     # Create management-friendly sheet so it appears after the new tabs
-    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap)
+    create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=include_cap, comment_align=comment_align)
 
     ws = wb.add_worksheet('דוח כלכלי')
     ws.right_to_left()
@@ -1090,7 +1089,7 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         row_idx += 1
         for _r in range(row_idx, row_idx + 8):
             ws.set_row(_r, 20)
-        _embed_comments_image(ws, row_idx, 0, comments)
+        _embed_comments_image(ws, row_idx, 0, comments, align=comment_align)
 
     ws.set_column('A:A', 35)
     ws.set_column('B:K', 18)
