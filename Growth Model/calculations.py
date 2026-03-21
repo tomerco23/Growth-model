@@ -5,6 +5,7 @@ from constants import CAT_MAP, Category
 
 def calculate_detailed_rows(items: list, params: dict):
     rows = []
+    employer_factor = params.get("EMPLOYER_FACTOR", 1.31)
     total_capex = 0.0
     total_opex = 0.0
     total_rev = 0.0
@@ -113,7 +114,8 @@ def calculate_detailed_rows(items: list, params: dict):
             rows.append(row)
 
             if sess_qty > 0 and sess_cost > 0:
-                val_base_sess = -(sess_qty * sess_cost * 12)
+                sess_cost_net = sess_cost * employer_factor
+                val_base_sess = -(sess_qty * sess_cost_net * 12)
                 total_opex += abs(val_base_sess)
                 sess_row = {
                     **base_row,
@@ -236,7 +238,8 @@ def calculate_detailed_rows(items: list, params: dict):
             rows.append(row)
 
             if rev_sess_vol > 0 and rev_sess_cost > 0:
-                val_base_rs = -(rev_sess_vol * rev_sess_cost)
+                rev_sess_cost_net = rev_sess_cost * employer_factor
+                val_base_rs = -(rev_sess_vol * rev_sess_cost_net)
                 sess_row = {
                     **base_row,
                     "Row_Type": "SessionInfo",

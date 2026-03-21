@@ -811,11 +811,15 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
         "APPEALS_PROV": "הפרשה לערעורים",
         "NO_SHOW_RATE": "אחוז אי-הגעה (No Show)",
         "CAP_RATE_FACTOR": "תעריף שולי (CAP)",
+        "EMPLOYER_FACTOR": "מקדם עלות מעביד",
     }
     r_p = 2
     for k, v in params.items():
         ws_meta.write(r_p, 0, hebrew_params.get(k, k), fmt['normal'])
-        ws_meta.write(r_p, 1, f"{v * 100:.1f}%", fmt['normal'])
+        if k == "EMPLOYER_FACTOR":
+            ws_meta.write(r_p, 1, f"×‏{v:.2f}", fmt['normal'])
+        else:
+            ws_meta.write(r_p, 1, f"{v * 100:.1f}%", fmt['normal'])
         r_p += 1
 
     r_p += 2

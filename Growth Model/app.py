@@ -169,6 +169,7 @@ def main():
             app = st.number_input("ערעורים", value=4.0) / 100
             cap = st.number_input("קאפ", value=35.0) / 100
             no_show = st.number_input("No-Show", value=0.0) / 100
+            employer_factor = st.number_input("עלות מעביד", value=1.31, step=0.01, format="%.2f")
             params = {
                 "OVERHEAD_RATE": ovh,
                 "HMO_DISCOUNT": 0.0,   # הנחת קופות הוסרה
@@ -176,6 +177,7 @@ def main():
                 "APPEALS_PROV": app,
                 "NO_SHOW_RATE": no_show,
                 "CAP_RATE_FACTOR": cap,
+                "EMPLOYER_FACTOR": employer_factor,
             }
 
     if not f_in:
