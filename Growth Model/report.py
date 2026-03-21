@@ -53,8 +53,8 @@ def generate_methodology() -> pd.DataFrame:
     data = [
         ("כמות שירותים נחזית", "הערכה שנתית של היקף הפעילות (זימונים)."),
         ("תקנים (FTE)", "משרה מלאה (Full Time Equivalent). 1.0 = משרה מלאה, 0.5 = חצי משרה."),
-        ("חישוב הכנסה נטו", "הנוסחה: מחיר מחירון (ברוטו) × (1 − (הנחת מחזור + הפרשה לערעורים))."),
-        ("חישוב הכנסה קאפ (CAP)", "הנוסחה: מחיר מחירון (ברוטו) * מקדם קאפ (תעריף שולי). ללא הנחות נוספות."),
+        ("חישוב הכנסה נטו", "הנוסחה: תעריף ברוטו x (1 - (הנחת מחזור + הפרשה לערעורים + תקורה)) x מקדם קאפ."),
+        ("חישוב הכנסה קאפ (CAP)", "מקדם קאפ מוחל כמכפיל על התעריף לאחר כל ההנחות (לא כהנחה נוספת)."),
         ("ניצולת (Utilization)", "מדד רגישות המייצג את היקף המימוש בפועל לעומת התכנון."),
         ("No Show", "שיעור המטופלים שקבעו תור אך לא הגיעו."),
         ("מקור הנתונים", "נתוני שכר מקובץ HR פנימי. תעריפים ממחירון משרד הבריאות."),
@@ -141,7 +141,7 @@ def _add_formats(wb) -> dict:
 
 def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, prof_b, prof_p, roi, rec, comments, params, include_cap=True):
     """Management report: fixed assumption cells, all revenue cells use Excel formulas.
-    CAP is always baked into the net tariff using additive combined discounts.
+    Formula: u_gross * (1 - (VOL+APPEALS+OVERHEAD)) * CAP_RATE_FACTOR.
     include_cap kept for API compatibility but ignored internally."""
     ws = wb.add_worksheet('דוח מנהלים')
     ws.right_to_left()
@@ -237,12 +237,11 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             is_private = u_gross_val > 0 and abs(u_gross_val - net_tar_orig) / u_gross_val < 0.001
             # Net tariff and Python fallback values
             if is_private:
-                u_net_new = u_gross_val * (1 - overhead)
-                net_t_new = qty_eff * u_net_new
+                u_final_new = u_gross_val
+                net_t_new   = qty_eff * u_gross_val
             else:
-                combined  = vol + appeals + overhead + cap_f
-                u_net_new = u_gross_val * (1 - combined)
-                net_t_new = qty_eff * u_net_new
+                u_final_new = u_gross_val * (1 - (vol + appeals + overhead)) * cap_f
+                net_t_new   = qty_eff * u_final_new
             # Service display name
             _svc_code    = str(r.get('קוד שירות', '')).strip()
             _svc_display = f"{r['שם שירות']} - {_svc_code}" if _svc_code else r['שם שירות']
@@ -252,12 +251,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             ws.write(row, CG, u_gross_val,  fmt['mgmt_curr'])
             if is_private:
                 ws.write_formula(row, CNT,
-                    f'=C{er}*(1-{ovh_ref})',
-                    fmt['mgmt_curr'], u_net_new)
+                    f'=C{er}',
+                    fmt['mgmt_curr'], u_final_new)
             else:
                 ws.write_formula(row, CNT,
-                    f'=C{er}*(1-({vol_ref}+{app_ref}+{ovh_ref}+{cap_ref}))',
-                    fmt['mgmt_curr'], u_net_new)
+                    f'=C{er}*(1-({vol_ref}+{app_ref}+{ovh_ref}))*{cap_ref}',
+                    fmt['mgmt_curr'], u_final_new)
             ws.write_formula(row, CGT,  f'=B{er}*C{er}', fmt['mgmt_curr'], gross_t)
             ws.write_formula(row, CNTK, f'=B{er}*D{er}', fmt['mgmt_curr'], net_t_new)
             s_net_t += net_t_new
@@ -795,8 +794,6 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
     }
     r_p = 2
     for k, v in params.items():
-        if k == 'HMO_DISCOUNT':
-            continue   # הוסר — הנחת קופות אינה בשימוש
         ws_meta.write(r_p, 0, hebrew_params.get(k, k), fmt['normal'])
         ws_meta.write(r_p, 1, f"{v * 100:.1f}%", fmt['normal'])
         r_p += 1
