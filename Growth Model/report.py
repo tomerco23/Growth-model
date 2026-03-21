@@ -1,7 +1,7 @@
 import io
 import pandas as pd
 
-from utils import format_number_str, is_html, html_to_png_bytes, strip_html
+from utils import format_number_str, is_html, html_to_png_bytes, strip_html, html_to_plain_text
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ def _embed_comments_image(ws, row: int, col: int, comments: str) -> None:
             })
             return
         except Exception:
-            comments = strip_html(comments)   # fall through to textbox
+            comments = html_to_plain_text(comments)   # fall through to textbox
 
     # Plain-text fallback
     _rtl = any('\u0590' <= c <= '\u05FF' for c in comments)

@@ -1,4 +1,5 @@
 import re
+import html as _html_mod
 import concurrent.futures
 import numpy as np
 import pandas as pd
@@ -36,8 +37,25 @@ def is_html(text: str) -> bool:
 
 
 def strip_html(html: str) -> str:
-    """Remove all HTML tags and return plain text."""
+    """Remove all HTML tags and return plain text (no entity decoding)."""
     return re.sub(r'<[^>]+>', '', html).strip()
+
+
+def html_to_plain_text(html: str) -> str:
+    """Convert Quill HTML to readable plain text with proper line breaks.
+
+    Handles <br>, </p>, </li> -> newline; decodes &nbsp; &amp; etc.
+    """
+    NL = chr(10)
+    text = re.sub(r'<br\s*/?>', NL, html, flags=re.IGNORECASE)
+    text = re.sub(r'</p>', NL, text, flags=re.IGNORECASE)
+    text = re.sub(r'</li>', NL, text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = _html_mod.unescape(text)
+    while NL * 3 in text:
+        text = text.replace(NL * 3, NL * 2)
+    text = text.replace(chr(160), chr(32))  # &nbsp; -> regular space
+    return text.strip()
 
 
 def _render_html_sync(html: str, width_px: int) -> bytes:
