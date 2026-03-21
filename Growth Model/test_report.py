@@ -105,11 +105,33 @@ def test_generate_excel():
     assert size > 5000, f"Excel file suspiciously small: {size} bytes"
     print(f"PASS: Excel generated OK – {size:,} bytes")
 
+
+def test_alignment_pipeline():
+    """Quill ql-align-* classes are correctly parsed into Excel alignment values."""
+    import sys; sys.path.insert(0, '.')
+    from utils import html_to_paragraphs
+
+    html = (
+        '<p class="ql-align-right">ימין</p>'
+        '<p class="ql-align-center">מרכז</p>'
+        '<p class="ql-align-left">left text</p>'
+        '<p>שורה רגילה</p>'
+        '<p style="text-align:center">סטייל יינליין</p>'
+    )
+    paras = html_to_paragraphs(html, default_align='right')
+    assert paras[0]['align'] == 'right',  f"Expected right, got {paras[0]['align']}"
+    assert paras[1]['align'] == 'center', f"Expected center, got {paras[1]['align']}"
+    assert paras[2]['align'] == 'left',   f"Expected left, got {paras[2]['align']}"
+    assert paras[3]['align'] == 'right',  f"Expected default right, got {paras[3]['align']}"
+    assert paras[4]['align'] == 'center', f"Expected center (style fallback), got {paras[4]['align']}"
+    print("PASS: alignment pipeline right/center/left/default/style-fallback all correct")
+
 if __name__ == '__main__':
     print("=" * 50)
     test_session_excluded_from_ops()
     test_session_only_manpower()
     test_recommendation_logic()
     test_generate_excel()
+    test_alignment_pipeline()
     print("=" * 50)
     print("ALL TESTS PASSED")

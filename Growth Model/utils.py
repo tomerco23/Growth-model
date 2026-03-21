@@ -91,6 +91,11 @@ def html_to_paragraphs(html: str, default_align: str = 'right') -> list:
                 if cls in _QUILL_ALIGN:
                     align = _QUILL_ALIGN[cls]
                     break
+        # Fallback: inline style text-align (Quill style-attributor output)
+        if align == default_align:
+            sty_m = re.search(r'text-align:\s*(\w+)', attrs)
+            if sty_m and sty_m.group(1).lower() in ('right', 'center', 'left', 'justify'):
+                align = sty_m.group(1).lower()
 
         # Bold / size from tag type or inline strong
         is_heading = tag.startswith('h') and len(tag) == 2

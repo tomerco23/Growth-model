@@ -57,6 +57,11 @@
       <button class="ql-italic" title="נטוי"></button>
     </span>
     <span class="ql-formats">
+      <button class="ql-align" value="right"  title="ישור לימין"></button>
+      <button class="ql-align" value="center" title="ישור למרכז"></button>
+      <button class="ql-align" value="left"   title="ישור לשמאל"></button>
+    </span>
+    <span class="ql-formats">
       <button class="ql-list" value="ordered" title="רשימה ממוספרת"></button>
       <button class="ql-list" value="bullet" title="רשימה תבליטית"></button>
     </span>
@@ -89,6 +94,11 @@
     }
 
     // ── Quill init ───────────────────────────────────────────────────────────
+    // Use class-based alignment so Quill outputs ql-align-* CSS classes
+    var AlignClass = Quill.import('attributors/class/align');
+    AlignClass.whitelist = ['right', 'center', 'left', 'justify'];
+    Quill.register(AlignClass, true);
+
     var quill = new Quill('#editor', {
       theme: 'snow',
       modules: { toolbar: '#toolbar' },
