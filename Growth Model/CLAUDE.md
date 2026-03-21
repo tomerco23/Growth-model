@@ -152,8 +152,18 @@ For EVERY feature request, bug fix, or architecture change, you MUST internally 
 - **State**: Always use safely `st.session_state.get('key', default)`.## 🛠️ Tools & Skills at your disposal
 Whenever you write logic or data processing code, use terminal commands to run `pytest` or Python scripts to verify your logic before confirming completion.
 
+## 📊 Excel Report Interactivity Rule (MANDATORY)
+Every change to the Streamlit app that adds or modifies a data column, parameter, or computed value **MUST** be reflected in the downloaded Excel report (`report.py`).
+Additionally, for **every new or modified cell** written in the Excel report you MUST evaluate whether it can use an Excel formula (`ws.write_formula`) instead of a static value:
+- **Derived / computed cells** (e.g. cost = qty × unit_price, emp_cost = gross × factor): **always** use `write_formula` so the spreadsheet stays live when the user edits assumptions.
+- **Assumption cells** (sidebar parameters written to the report header): write as static values but define a named `*_ref = '$F$N'` constant so downstream formulas can reference them.
+- **Pattern**: `ws.write_formula(row, col, f'=...formula...', fmt, fallback_value)` — the fallback value is the pre-computed Python result, used by Excel if formulas are disabled.
+- Cross-sheet references: `='שם גיליון'!$X$N` (Hebrew sheet names must be wrapped in single quotes).
+
 ## ⏪ Version Control & Safety (Git)
 Before making any significant changes to the codebase, you MUST:
 1. Check the git status. If the working tree is clean, proceed. If not, ask me if you should commit the current state first.
 2. After implementing a new feature or fixing a bug successfully, automatically run `git add .` and `git commit -m "Agent update: [Brief description of what was added/fixed]"`.
 This ensures we always have a safe restore point to go back to. If a change breaks the app, you will help me use `git checkout` or `git revert` to undo it.
+
+"Only when I use the prefix /THINK, you must internally consult with the 4 personas (Product Manager, Economist, Data Engineer, Performance Architect). For regular requests, act as a senior Python/Streamlit developer and write/edit the code directly and efficiently."
