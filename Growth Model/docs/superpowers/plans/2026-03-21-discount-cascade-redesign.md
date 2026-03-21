@@ -4,7 +4,7 @@
 
 **Goal:** Replace the multiplicative multi-step discount calculation with an additive single-bracket formula: `u_gross * (1 - (HMO + VOL + APPEALS + OVERHEAD)) * CAP_RATE_FACTOR`
 
-**Architecture:** Single-function change inside the Revenue branch of `calculate_detailed_rows()` in `calculations.py`. A new `test_calculations.py` file covers the formula with unit tests. `CLAUDE.md` is updated to reflect the new formula.
+**Architecture:** Single-function change inside the Revenue branch of `calculate_detailed_rows()` in `calculations.py`. `report.py` Excel formulas are updated to match. A new `test_calculations.py` file covers the formula with unit tests. `CLAUDE.md` is updated to reflect the new formula.
 
 **Tech Stack:** Python, pandas, plain assertion tests (see `test_report.py` pattern)
 
@@ -285,8 +285,88 @@ git add "Growth Model/CLAUDE.md"
 git commit -m "docs(CLAUDE.md): update revenue formula to additive discount cascade"
 ```
 
+
+---
+
+### Task 4: Update report.py -- Excel formulas and assumption cells
+
+**Files:**
+- Modify: Growth Model/report.py
+
+Three sub-areas to update:
+
+#### 4a. create_management_report_sheet -- add HMO assumption cell + fix formula
+
+**Step 9a:** After the line cap_f = params.get('CAP_RATE_FACTOR', 0), add:
+    hmo = params.get('HMO_DISCOUNT', 0)
+
+**Step 9b:** After the line CAP_ROW = 6, add:
+    HMO_ROW = 7
+    hmo_ref = '$F$8'
+
+**Step 9c:** Append to the assumption loop:
+    (HMO_ROW, 'הנחת קופות', hmo),
+
+**Step 9d:** Replace Python fallback for non-private:
+    OLD: combined  = vol + appeals + overhead + cap_f
+         u_net_new = u_gross_val * (1 - combined)
+         net_t_new = qty_eff * u_net_new
+    NEW: u_net_new   = u_gross_val * (1 - (hmo + vol + appeals + overhead))
+         u_final_new = u_net_new * cap_f
+         net_t_new   = qty_eff * u_final_new
+
+**Step 9e:** Replace Python fallback for private:
+    OLD: if is_private:
+             u_net_new = u_gross_val * (1 - overhead)
+             net_t_new = qty_eff * u_net_new
+    NEW: if is_private:
+             u_net_new   = u_gross_val
+             u_final_new = u_gross_val
+             net_t_new   = qty_eff * u_gross_val
+
+**Step 9f:** Replace Excel formula writes:
+    OLD private:     f'=C{er}*(1-{ovh_ref})'         fallback=u_net_new
+    OLD non-private: f'=C{er}*(1-({vol_ref}+{app_ref}+{ovh_ref}+{cap_ref}))'  fallback=u_net_new
+    NEW private:     f'=C{er}'                        fallback=u_net_new
+    NEW non-private: f'=C{er}*(1-({hmo_ref}+{vol_ref}+{app_ref}+{ovh_ref}))*{cap_ref}'  fallback=u_final_new
+
+Note: CNTK formula =B{er}*D{er} and s_net_t += net_t_new remain unchanged.
+
+**Step 9g:** Update docstring line:
+    OLD: CAP is always baked into the net tariff using additive combined discounts.
+    NEW: Formula: u_gross * (1 - (HMO+VOL+APPEALS+OVERHEAD)) * CAP_RATE_FACTOR.
+
+#### 4b. generate_methodology() -- update formula descriptions
+
+Find:
+    ("חישוב הכנסה נטו", "הנוסחה: מחיר מחירון (ברוטו) x (1 - (הנחת מחזור + הפרשה לערעורים))."),
+    ("חישוב הכנסה קאפ (CAP)", "הנוסחה: מחיר מחירון (ברוטו) * מקדם קאפ (תעריף שולי). ללא הנחות נוספות."),
+
+Replace with:
+    ("חישוב הכנסה נטו", "הנוסחה: תעריף ברוטו x (1 - (הנחת קופות + הנחת מחזור + הפרשה לערעורים + תקורה)) x מקדם קאפ."),
+    ("חישוב הכנסה קאפ (CAP)", "מקדם קאפ מוחל כמכפיל על התעריף לאחר כל ההנחות (לא כהנחה נוספת)."),
+
+#### 4c. Metadata sheet -- re-enable HMO_DISCOUNT row
+
+Delete these two lines:
+        if k == 'HMO_DISCOUNT':
+            continue   # הוסר -- הנחת קופות אינה בשימוש
+
+- [ ] **Step 9: Apply all sub-changes in 4a, 4b, 4c to report.py**
+
+- [ ] **Step 10: Run existing report tests**
+
+Run: python test_report.py (from Growth Model/)
+Expected: ALL TESTS PASSED
+
+- [ ] **Step 11: Commit report.py changes**
+
+git add "Growth Model/report.py"
+git commit -m "feat(report): update Excel formulas to additive discount cascade with CAP multiplier"
+
 ---
 
 ## Done
 
-All five unit tests pass. `test_report.py` also passes. Two commits made. The new additive cascade formula is live.
+All five unit tests pass. test_report.py also passes. Three commits made. The new additive cascade formula is live in both calculations and the Excel export.
+
