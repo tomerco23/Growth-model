@@ -9,7 +9,7 @@ The current revenue calculation applies discounts sequentially and multiplicativ
 ## New Formula
 
 ```
-u_net    = u_gross x (1 - (HMO_DISCOUNT + VOL_DISCOUNT + APPEALS_PROV + OVERHEAD_RATE))
+u_net    = u_gross x (1 - (VOL_DISCOUNT + APPEALS_PROV + OVERHEAD_RATE))
 u_final  = u_net x CAP_RATE_FACTOR
 net_pocket = qty_net x u_final
 ```
@@ -17,13 +17,12 @@ net_pocket = qty_net x u_final
 Default parameter values:
 | Parameter | Value | Hebrew label |
 |-----------|-------|-------------|
-| HMO_DISCOUNT | 18.5% | הנחת קופות |
 | VOL_DISCOUNT | 1.9% | הנחת מחזור |
 | APPEALS_PROV | 4.0% | הנחת ערעור |
 | OVERHEAD_RATE | 29.0% | הנחת תקורה |
 | CAP_RATE_FACTOR | 35.0% | מקדם קאפ |
 
-Combined discount = 54.4% -> u_net = u_gross x 0.456
+Combined discount = 34.9% -> u_net = u_gross x 0.651
 Final rate = u_net x 0.35
 
 ## Old Formula (replaced)
@@ -45,8 +44,8 @@ Key differences:
 
 ```python
 combined_discount = (
-    params['HMO_DISCOUNT'] + params['VOL_DISCOUNT'] +
-    params['APPEALS_PROV'] + params['OVERHEAD_RATE']
+    params['VOL_DISCOUNT'] + params['APPEALS_PROV']
+    + params['OVERHEAD_RATE']
 )
 global_discount_factor = 1 - combined_discount
 active_discount_factor = (
@@ -70,7 +69,7 @@ net_pocket = qty_net * u_final
 
 | Column | Old meaning | New meaning |
 |--------|-------------|-------------|
-| תעריף יחידה אחרי הנחות | after VOL+APPEALS | after HMO+VOL+APPEALS+OVERHEAD (before CAP) |
+| תעריף יחידה אחרי הנחות | after VOL+APPEALS | after VOL+APPEALS+OVERHEAD (before CAP) |
 | תעריף יחידה תחת cap | gross x CAP | discounted x CAP = u_final |
 | עלות תקורה | separate overhead deduction | derived display: qty_net x u_net x OVERHEAD |
 | סה"כ אחרי הנחות | qty_net x u_net (old) | qty_net x u_net (new definition) |

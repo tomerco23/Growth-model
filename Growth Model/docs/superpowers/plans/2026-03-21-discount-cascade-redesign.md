@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the multiplicative multi-step discount calculation with an additive single-bracket formula: `u_gross * (1 - (HMO + VOL + APPEALS + OVERHEAD)) * CAP_RATE_FACTOR`
+**Goal:** Replace the multiplicative multi-step discount calculation with an additive single-bracket formula: `u_gross * (1 - (VOL + APPEALS + OVERHEAD)) * CAP_RATE_FACTOR`
 
 **Architecture:** Single-function change inside the Revenue branch of `calculate_detailed_rows()` in `calculations.py`. `report.py` Excel formulas are updated to match. A new `test_calculations.py` file covers the formula with unit tests. `CLAUDE.md` is updated to reflect the new formula.
 
@@ -31,7 +31,6 @@ sys.path.insert(0, '.')
 from calculations import calculate_detailed_rows
 
 PARAMS = {
-    'HMO_DISCOUNT':    0.185,
     'VOL_DISCOUNT':    0.019,
     'APPEALS_PROV':    0.04,
     'OVERHEAD_RATE':   0.29,
@@ -39,13 +38,13 @@ PARAMS = {
     'NO_SHOW_RATE':    0.0,
 }
 
-# combined discount = 0.185 + 0.019 + 0.04 + 0.29 = 0.534
-# u_net_factor  = 1 - 0.534  = 0.466
-# u_final_factor = 0.466 * 0.35 = 0.1631
+# combined discount = 0.019 + 0.04 + 0.29 = 0.349
+# u_net_factor  = 1 - 0.349  = 0.651
+# u_final_factor = 0.651 * 0.35 = 0.22785
 
 U_GROSS        = 1000.0
-EXPECTED_U_NET   = round(U_GROSS * (1 - 0.534), 6)   # 466.0
-EXPECTED_U_FINAL = round(EXPECTED_U_NET * 0.35, 6)   # 163.1
+EXPECTED_U_NET   = round(U_GROSS * (1 - 0.349), 6)   # 651.0
+EXPECTED_U_FINAL = round(EXPECTED_U_NET * 0.35, 6)   # 227.85
 
 
 def _revenue_item(overrides=None):
@@ -196,7 +195,7 @@ Replace with:
 
 ```python
             combined_discount = (
-                params['HMO_DISCOUNT'] + params['VOL_DISCOUNT']
+                params['VOL_DISCOUNT']
                 + params['APPEALS_PROV'] + params['OVERHEAD_RATE']
             )
             global_discount_factor = 1 - combined_discount
@@ -231,9 +230,9 @@ cd "Growth Model" && python test_calculations.py
 Expected output:
 ```
 ============================================================
-PASS: u_net = 466.0
-PASS: u_final = 163.1
-PASS: net_pocket = 16,310.00
+PASS: u_net = 651.0
+PASS: u_final = 227.85
+PASS: net_pocket = 22,785.00
 PASS: private net_pocket = 50,000.00
 PASS: manual discount net_pocket = 24,500.00
 ============================================================
@@ -311,11 +310,11 @@ Three sub-areas to update:
     OLD: combined  = vol + appeals + overhead + cap_f
          u_net_new = u_gross_val * (1 - combined)
          net_t_new = qty_eff * u_net_new
-    NEW: u_net_new   = u_gross_val * (1 - (hmo + vol + appeals + overhead))
+    NEW: u_net_new   = u_gross_val * (1 - (vol + appeals + overhead))
          u_final_new = u_net_new * cap_f
          net_t_new   = qty_eff * u_final_new
 
-**Step 9e:** Replace Python fallback for private:
+**Step 9b:** Replace Python fallback for private:
     OLD: if is_private:
              u_net_new = u_gross_val * (1 - overhead)
              net_t_new = qty_eff * u_net_new
@@ -324,17 +323,17 @@ Three sub-areas to update:
              u_final_new = u_gross_val
              net_t_new   = qty_eff * u_gross_val
 
-**Step 9f:** Replace Excel formula writes:
+**Step 9c:** Replace Excel formula writes:
     OLD private:     f'=C{er}*(1-{ovh_ref})'         fallback=u_net_new
     OLD non-private: f'=C{er}*(1-({vol_ref}+{app_ref}+{ovh_ref}+{cap_ref}))'  fallback=u_net_new
     NEW private:     f'=C{er}'                        fallback=u_net_new
-    NEW non-private: f'=C{er}*(1-({hmo_ref}+{vol_ref}+{app_ref}+{ovh_ref}))*{cap_ref}'  fallback=u_final_new
+    NEW non-private: f'=C{er}*(1-({vol_ref}+{app_ref}+{ovh_ref}))*{cap_ref}'  fallback=u_final_new
 
 Note: CNTK formula =B{er}*D{er} and s_net_t += net_t_new remain unchanged.
 
-**Step 9g:** Update docstring line:
+**Step 9d:** Update docstring line:
     OLD: CAP is always baked into the net tariff using additive combined discounts.
-    NEW: Formula: u_gross * (1 - (HMO+VOL+APPEALS+OVERHEAD)) * CAP_RATE_FACTOR.
+    NEW: Formula: u_gross * (1 - (VOL+APPEALS+OVERHEAD)) * CAP_RATE_FACTOR.
 
 #### 4b. generate_methodology() -- update formula descriptions
 
@@ -352,7 +351,7 @@ Delete these two lines:
         if k == 'HMO_DISCOUNT':
             continue   # הוסר -- הנחת קופות אינה בשימוש
 
-- [ ] **Step 9: Apply all sub-changes in 4a, 4b, 4c to report.py**
+- [ ] **Step 9: Apply all sub-changes to report.py**
 
 - [ ] **Step 10: Run existing report tests**
 
