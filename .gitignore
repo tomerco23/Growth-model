@@ -1,37 +1,28 @@
 # Python bytecode
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
+*.pyo
+*.pyd
 
-# Virtual environments
-.venv/
-venv/
-env/
+# Data / sensitive files (hospital DB, MoH price lists)
+*.xlsx
+*.xls
+*.csv
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
+# Windows artifacts
+nul
 
-# Pytest / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# OS
+# OS / IDE
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
 
-# Streamlit
-.streamlit/secrets.toml
+# Streamlit cache
+.streamlit/
 
-# Project saves / generated outputs (optional – remove to track these)
-*.json
-PROJECT_PRESENTATION.md
-QA_REVIEW.md
-DB_MIGRATION_PLAN.md
-UI_IMPROVEMENT_NOTES.md
-BACKEND_AUDIT.md
+# Temp / env
+*.env
+.env
+venv/
+.venv/
