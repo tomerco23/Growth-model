@@ -83,10 +83,10 @@ app.py passes to views:
 
 ### Revenue Calculation (`calculations.py`)
 ```
-qty_net = qty × (1 - no_show_rate) × (0.93 if new_service)
-u_net   = u_gross × (1 - hmo_discount) × (1 - vol_discount) × (1 - appeals_prov)
-u_cap   = u_gross × cap_rate_factor
-net_pocket = qty_net × u_net × (1 - overhead_rate)
+qty_net    = qty × (1 - no_show_rate) × (0.93 if new_service)
+u_final    = u_gross × (1 − (VOL_DISCOUNT + APPEALS_PROV + OVERHEAD_RATE)) × CAP_RATE_FACTOR
+net_pocket = qty_net × u_final
+# private services: u_final = u_gross (bypass all)
 ```
 
 ### Marginal Productivity Tool (`show_marginal_productivity_tool`)
