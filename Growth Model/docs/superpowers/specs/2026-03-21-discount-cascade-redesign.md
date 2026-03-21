@@ -9,8 +9,7 @@ The current revenue calculation applies discounts sequentially and multiplicativ
 ## New Formula
 
 ```
-u_net    = u_gross x (1 - (VOL_DISCOUNT + APPEALS_PROV + OVERHEAD_RATE))
-u_final  = u_net x CAP_RATE_FACTOR
+u_final    = u_gross x (1 - (VOL_DISCOUNT + APPEALS_PROV + OVERHEAD_RATE)) x CAP_RATE_FACTOR
 net_pocket = qty_net x u_final
 ```
 
@@ -69,10 +68,10 @@ net_pocket = qty_net * u_final
 
 | Column | Old meaning | New meaning |
 |--------|-------------|-------------|
-| תעריף יחידה אחרי הנחות | after VOL+APPEALS | after VOL+APPEALS+OVERHEAD (before CAP) |
-| תעריף יחידה תחת cap | gross x CAP | discounted x CAP = u_final |
-| עלות תקורה | separate overhead deduction | derived display: qty_net x u_net x OVERHEAD |
-| סה"כ אחרי הנחות | qty_net x u_net (old) | qty_net x u_net (new definition) |
+| תעריף יחידה אחרי הנחות | after VOL+APPEALS | = u_final (single step, same as תחת cap) |
+| תעריף יחידה תחת cap | gross x CAP | = u_final = u_gross x (1-discounts) x CAP |
+| עלות תקורה | separate overhead deduction | 0 (overhead baked into formula, no separate display) |
+| סה"כ אחרי הנחות | qty_net x u_net (old) | qty_net x u_final |
 | סה"כ אחרי קאפ | qty_net x u_cap (old) | qty_net x u_final |
 | סה"כ נטו לכיס | tot_net - ovh_cost | qty_net x u_final |
 
@@ -84,7 +83,7 @@ net_pocket = qty_net x u_gross
 ## Manual Discount Override
 
 When Manual_Discount_Pct is set, it replaces global_discount_factor entirely.
-CAP is still applied on top: u_final = u_gross x (1 - Manual_Discount_Pct/100) x CAP
+Single step: u_final = u_gross x (1 - Manual_Discount_Pct/100) x CAP
 
 ## Files to Modify
 

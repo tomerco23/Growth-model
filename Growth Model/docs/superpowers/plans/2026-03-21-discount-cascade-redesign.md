@@ -39,12 +39,10 @@ PARAMS = {
 }
 
 # combined discount = 0.019 + 0.04 + 0.29 = 0.349
-# u_net_factor  = 1 - 0.349  = 0.651
-# u_final_factor = 0.651 * 0.35 = 0.22785
+# u_final = u_gross * (1 - 0.349) * 0.35 = u_gross * 0.22785
 
 U_GROSS        = 1000.0
-EXPECTED_U_NET   = round(U_GROSS * (1 - 0.349), 6)   # 651.0
-EXPECTED_U_FINAL = round(EXPECTED_U_NET * 0.35, 6)   # 227.85
+EXPECTED_U_FINAL = round(U_GROSS * (1 - 0.349) * 0.35, 6)   # 227.85
 
 
 def _revenue_item(overrides=None):
@@ -71,25 +69,25 @@ def _revenue_item(overrides=None):
 
 
 def test_unit_rate_after_discounts():
-    """u_net should equal u_gross * (1 - combined_discount)."""
+    """תעריף אחרי הנחות = u_final (single step, same as תחת cap)."""
     df, *_ = calculate_detailed_rows([_revenue_item()], PARAMS)
     row = df[df['סוג'] == 'הכנסה'].iloc[0]
     actual = round(row['תעריף יחידה אחרי הנחות'], 6)
-    assert actual == EXPECTED_U_NET, (
-        f"תעריף אחרי הנחות: expected {EXPECTED_U_NET}, got {actual}"
+    assert actual == EXPECTED_U_FINAL, (
+        f"תעריף אחרי הנחות: expected {EXPECTED_U_FINAL}, got {actual}"
     )
-    print(f"PASS: u_net = {actual}")
+    print(f"PASS: u_final = {actual}")
 
 
 def test_unit_rate_under_cap():
-    """u_final (תחת cap) should equal u_net * CAP_RATE_FACTOR."""
+    """תעריף תחת cap = u_gross * (1-discounts) * CAP (single-step)."""
     df, *_ = calculate_detailed_rows([_revenue_item()], PARAMS)
     row = df[df['סוג'] == 'הכנסה'].iloc[0]
     actual = round(row['תעריף יחידה תחת cap'], 6)
     assert actual == EXPECTED_U_FINAL, (
         f"תעריף תחת cap: expected {EXPECTED_U_FINAL}, got {actual}"
     )
-    print(f"PASS: u_final = {actual}")
+    print(f"PASS: u_final (cap) = {actual}")
 
 
 def test_net_pocket_equals_qty_times_u_final():
@@ -195,8 +193,8 @@ Replace with:
 
 ```python
             combined_discount = (
-                params['VOL_DISCOUNT']
-                + params['APPEALS_PROV'] + params['OVERHEAD_RATE']
+                params['VOL_DISCOUNT'] + params['APPEALS_PROV']
+                + params['OVERHEAD_RATE']
             )
             global_discount_factor = 1 - combined_discount
             active_discount_factor = (
@@ -206,16 +204,12 @@ Replace with:
             )
 
             if item.get('Is_Private'):
-                u_net   = u_gross
                 u_final = u_gross
             else:
-                u_net   = u_gross * active_discount_factor
-                u_final = u_net * params['CAP_RATE_FACTOR']
+                u_final = u_gross * active_discount_factor * params['CAP_RATE_FACTOR']
 
             tot_gross  = qty_net * u_gross
-            tot_net    = qty_net * u_net
             tot_cap    = qty_net * u_final
-            ovh_cost   = qty_net * u_net * params['OVERHEAD_RATE']
             net_pocket = qty_net * u_final
 ```
 
@@ -310,8 +304,7 @@ Three sub-areas to update:
     OLD: combined  = vol + appeals + overhead + cap_f
          u_net_new = u_gross_val * (1 - combined)
          net_t_new = qty_eff * u_net_new
-    NEW: u_net_new   = u_gross_val * (1 - (vol + appeals + overhead))
-         u_final_new = u_net_new * cap_f
+    NEW: u_final_new = u_gross_val * (1 - (vol + appeals + overhead)) * cap_f
          net_t_new   = qty_eff * u_final_new
 
 **Step 9b:** Replace Python fallback for private:
@@ -342,7 +335,7 @@ Find:
     ("חישוב הכנסה קאפ (CAP)", "הנוסחה: מחיר מחירון (ברוטו) * מקדם קאפ (תעריף שולי). ללא הנחות נוספות."),
 
 Replace with:
-    ("חישוב הכנסה נטו", "הנוסחה: תעריף ברוטו x (1 - (הנחת קופות + הנחת מחזור + הפרשה לערעורים + תקורה)) x מקדם קאפ."),
+    ("חישוב הכנסה נטו", "הנוסחה: תעריף ברוטו x (1 - (הנחת מחזור + הפרשה לערעורים + תקורה)) x מקדם קאפ."),
     ("חישוב הכנסה קאפ (CAP)", "מקדם קאפ מוחל כמכפיל על התעריף לאחר כל ההנחות (לא כהנחה נוספת)."),
 
 #### 4c. Metadata sheet -- re-enable HMO_DISCOUNT row
