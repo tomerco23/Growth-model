@@ -185,6 +185,7 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
     ns_ref  = '$F$5'
     ovh_ref = '$F$6'
     cap_ref = '$F$7'
+    emp_ref = '$F$8'
 
     # ---- Revenue table column indices (0-based, A–F; no CAP column) -----
     CN, CQ, CG = 0, 1, 2   # name, effective qty, gross tariff
@@ -400,8 +401,12 @@ def create_management_report_sheet(wb, fmt, df_flat, p_name, capex, opex, rev, p
             if C_SP_GROSS is not None:
                 ws.write(row, C_SP_GROSS, sp_gross_v,
                          fmt['mgmt_curr'] if sp_gross_v != '' else fmt['mgmt_normal'])
-                ws.write(row, C_SP_EMP, sp_emp_v,
-                         fmt['mgmt_curr'] if sp_emp_v != '' else fmt['mgmt_normal'])
+                if sp_emp_v != '':
+                    ws.write_formula(row, C_SP_EMP,
+                                     f'={_cl(C_SP_GROSS)}{er}*{emp_ref}',
+                                     fmt['mgmt_curr'], sp_emp_v)
+                else:
+                    ws.write(row, C_SP_EMP, '', fmt['mgmt_normal'])
             ws.write_formula(row, C_TOT, mp_formula, fmt['mgmt_curr'], total_cost)
             s_mp += total_cost; row += 1
 
@@ -1014,7 +1019,10 @@ def create_hybrid_report_sheet(writer, df_flat, p_name, capex, opex, rev, prof_b
                 if has_sessions:
                     ws.write(row_idx, c_idx, sess_vol, fmt['normal']); c_idx += 1
                     ws.write(row_idx, c_idx, sess_price_gross, fmt['curr']); c_idx += 1
-                    ws.write(row_idx, c_idx, sess_price_emp, fmt['curr']); c_idx += 1
+                    _gross_col = chr(ord('A') + c_idx - 1)
+                    ws.write_formula(row_idx, c_idx,
+                                     f"={_gross_col}{row_idx + 1}*'דוח מנהלים'!$F$8",
+                                     fmt['curr'], sess_price_emp); c_idx += 1
                 ws.write(row_idx, c_idx, total_combined, fmt['curr']); c_idx += 1
                 if show_scenarios:
                     ws.write(row_idx, c_idx, total_combined * (row['Pct_Opt_Raw'] / 100), fmt['curr']); c_idx += 1
